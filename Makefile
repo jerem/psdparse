@@ -24,9 +24,12 @@ clean :
 
 SRCARCHIVE = psdparse.zip
 
+gpl.html : 
+	curl http://www.gnu.org/licenses/gpl.html | sed -e 's%</HEAD>%<BASE HREF="http://www.gnu.org/"> </HEAD>%' > $@
+
 src : $(SRCARCHIVE)
 
-$(SRCARCHIVE) : Makefile psdparse.c ../netpbmformats/dist/gpl.html
+$(SRCARCHIVE) : Makefile psdparse.c gpl.html
 	zip -9 psdparse.zip $^
 
 psdparse : psdparse.o
