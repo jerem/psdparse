@@ -20,11 +20,17 @@
 /* version history:
 	15-Oct-2004: 0.1 commenced
 	19-Oct-2004: 0.1b1 released
+  26-Mar-2005: 1.0 significant bugs in layer handling fixed
 */
 #include <stdio.h>
 #include <stdlib.h>
 
 //#include "pigeneral.h"
+
+enum{ MAXLAYERS = 64, CONTEXTROWS = 3 };
+
+#define PAD2(x) (((x)+1) & -2) // same or next even
+#define PAD4(x) (((x)+3) & -4) // same or next multiple of 4
 
 struct psd_header{
 	long sig;
@@ -51,6 +57,65 @@ struct layer_info2{
 	char flags;
 	char filler;
 	//long extradatasize;
+};
+
+struct resdesc {
+  int id;
+  char *str;
+} rdesc[] = {
+  1000,"PS2.0 mode data", // Obsolete—Photoshop 2.0 only. Contains five 2 byte values:
+  // number of channels, rows, columns, depth, and mode.
+  1001,"Macintosh print record",
+  1003,"PS2.0 indexed color table",
+  1005,"ResolutionInfo",
+  1006,"Names of the alpha channels",
+  1007,"DisplayInfo",
+  1008,"caption",
+  1009,"Border information",
+  1010,"Background color",
+  1011,"Print flags",
+  1012,"Grayscale and multichannel halftoning info",
+  1013,"Color halftoning info",
+  1014,"Duotone halftoning info",
+  1015,"Grayscale and multichannel transfer function",
+  1016,"Color transfer functions",
+  1017,"Duotone transfer functions",
+  1018,"Duotone image info",
+  1019,"black and white values for the dot range",
+  1021,"EPS options",
+  1022,"Quick Mask info",
+  1024,"Layer state info",
+  1025,"Working path",
+  1026,"Layers group info",
+  1028,"IPTC-NAA record (File Info)",
+  1029,"Image mode for raw format files",
+  1030,"JPEG quality",
+  1032,"Grid and guides info",
+  1033,"Thumbnail resource",
+  1034,"Copyright flag",
+  1035,"URL",
+  1036,"Thumbnail resource",
+  1037,"Global Angle",
+  1038,"Color samplers resource",
+  1039,"ICC Profile",
+  1040,"Watermark",
+  1041,"ICC Untagged",
+  1042,"Effects visible",
+  1043,"Spot Halftone",
+  1044,"Document specific IDs",
+  1045,"Unicode Alpha Names",
+  1046,"Indexed Color Table Count",
+  1047,"Transparent Index",
+  1049,"Global Altitude",
+  1050,"Slices",
+  1051,"Workflow URL",
+  1052,"Jump To XPEP",
+  1053,"Alpha Identifiers",
+  1054,"URL List",
+  1057,"Version Info",
+  2999,"Name of clipping path",
+  10000,"Print flags info",
+  0,NULL
 };
 
 char *mode_names[]={
@@ -97,104 +162,126 @@ void dochannel(FILE *f,int channels,int rows,int cols,int depth){
 	long scanline,compdata,rawdata;
 	unsigned char *rowbuf;
 	unsigned short *rlebuf;
+  enum{RAWDATA,RLECOMP};
 	
 	comp = get2B(f);
-	printf("  compression method = %d (%s)\n",comp,comp==1 ? "RLE" : (comp ? "???" : "raw"));
+	printf("  compression = %d (%s)\n",
+    comp,comp==RLECOMP ? "RLE" : (comp==RAWDATA ? "raw" : "???"));
 
 	rb = (channels*cols*depth + 7)/8;
 	rawdata = (long)channels*rows*rb;
-	printf("  uncompressed size is %ld bytes (row bytes = %d)\n",rawdata,rb);
+	printf("  uncompressed size %ld bytes (row bytes = %d)\n",rawdata,rb);
 
 	rowbuf = malloc(rb*2); /* slop for possible RLE overhead */
-	if(comp == 1){
+	if(comp == RLECOMP){
 		n = channels*rows;
-		rlebuf = malloc(n*2);
+		rlebuf = malloc(n*sizeof(short));
 		for(j=0;j<n && !feof(f);++j)
 			rlebuf[j] = get2B(f);
 		if(j < n)
 			fatal("# couldn't read RLE counts");
 	}
 
-	for(ch=scanline=compdata=0;ch<channels;++ch){
+	for(ch=scanline=compdata=0 ; ch < channels ; ++ch){
 		if(channels>1)
-			printf("  channel %d:\n",ch);
+			printf("    channel %d:\n",ch);
 		for(j=0;j<rows;++j){
-			if(rows>15){
-				if(j==rows-5) 
-					printf("  ...%d rows not shown...\n",rows-10);
-				dumpit = j<5 || j>=rows-5;
+			if(rows > 3*CONTEXTROWS){
+				if(j==rows-CONTEXTROWS) 
+					printf("    ...%d rows not shown...\n",rows-2*CONTEXTROWS);
+				dumpit = j<CONTEXTROWS || j>=rows-CONTEXTROWS;
 			}else 
 				dumpit = 1;
-			if(comp == 1){ /* RLE */
+        
+			if(comp == RLECOMP){
 				n = rlebuf[scanline++];
 				compdata += n;
 				if(fread(rowbuf,1,n,f) == n){
 					if(dumpit){
-						printf("  %4d: <%4d> ",j,n);
+						printf("    %4d: <%4d> ",j,n);
 						dumprow(rowbuf,n);
 					}
-				}else fatal("# couldn't read row!\n");
-			}else if(comp == 0){ /* raw */
+				}else fatal("# couldn't read RLE row!\n");
+			}else if(comp == RAWDATA){
 				if(fread(rowbuf,1,rb,f) == rb){
 					if(dumpit){
-						printf("  %4d: ",j);
+						printf("    %4d: ",j);
 						dumprow(rowbuf,rb);
 					}
-				}else fatal("# couldn't read row!\n");
+				}else fatal("# couldn't read raw row!\n");
 			}else fatal("# bad compression value\n");
 		}
 	}
 	putchar('\n');	
 
-	if(comp == 1)
-		free(rlebuf);
+	if(comp == RLECOMP) free(rlebuf);
 	free(rowbuf);
 }
 
 void dolayermaskinfo(FILE *f,struct psd_header *h){
-	long miscstart,misclen,layerlen,chlen,skip;
+	long miscstart,misclen,layerlen,chlen,skip,extrastart,extralen;
 	short nlayers;
-	int i,j,chid;
-	struct layer_info linfo;
+	int i,j,chid,namelen;
+  char name[0x100];
+	struct layer_info linfo[MAXLAYERS];
 	
 	if(misclen = get4B(f)){
 		miscstart = ftell(f);
+    
+    // process layer info section
 		if(layerlen = get4B(f)){
+      // layers structure
 			nlayers = get2B(f);
-			printf("  nlayers = %d \n",nlayers);
 			if(nlayers<0){
 				nlayers = -nlayers;
-				puts("  (first alpha channel is transparency data for merged image)");
+				puts("  (first alpha is transparency for merged image)");
 			}
-		
+      printf("  nlayers = %d\n",nlayers);
+      
 			for(i=0;i<nlayers;++i){
-				linfo.top = get4B(f);
-				linfo.left = get4B(f);
-				linfo.bottom = get4B(f);
-				linfo.right = get4B(f);
-				linfo.channels = get2B(f);
+        // process layer record
+				linfo[i].top = get4B(f);
+				linfo[i].left = get4B(f);
+				linfo[i].bottom = get4B(f);
+				linfo[i].right = get4B(f);
+				linfo[i].channels = get2B(f);
 
-				printf("  layer %d: (%d,%d,%d,%d), %d channels (%d rows x %d cols)\n",
-					i,linfo.top,linfo.left,linfo.bottom,linfo.right,linfo.channels,
-					linfo.bottom-linfo.top,linfo.right-linfo.left);
+				printf("\n  layer %d: (%d,%d,%d,%d), %d channels (%d rows x %d cols)\n",
+					i, linfo[i].top, linfo[i].left, linfo[i].bottom, linfo[i].right, linfo[i].channels,
+					linfo[i].bottom-linfo[i].top, linfo[i].right-linfo[i].left);
 	
-				for(j=0;j<linfo.channels;++j){
+				for( j=0 ; j < linfo[i].channels ; ++j ){
 					chid = get2B(f);
 					chlen = get4B(f);
-					printf("  channel %d: id=%d, %d bytes\n",j,chid,chlen);
+					printf("    channel %2d: id=%2d, %5d bytes\n",j,chid,chlen);
 				}
 				
-				fseek(f,12,SEEK_CUR); // skip rest of layer info
-				skipblock(f,"layer info: extra data");
-	
-				for(j=0;j<linfo.channels;++j){
-					printf("  layer %d channel %d:\n",i,j);
-					dochannel(f,1,linfo.bottom-linfo.top,linfo.right-linfo.left,h->depth);
-				}
-		
+				fseek(f,12,SEEK_CUR); // skip blending sig, key, opacity
+				//skipblock(f,"layer info: extra data");
+        extralen = get4B(f);
+        extrastart = ftell(f);
+        //printf("  (extra data: %d bytes @ %d)\n",extralen,extrastart);
+
+        skipblock(f,"layer mask data");
+        skipblock(f,"layer blending ranges");
+        // layer name
+        namelen = fgetc(f);
+        fread(name,1,PAD4(1+namelen),f);
+        name[namelen] = 0;
+        printf("  layer name: \"%s\"\n",name);
+        
+        fseek(f,extrastart+extralen,SEEK_SET); // skip over any extra data
 			}
+      
+      for(i=0;i<nlayers;++i){
+        for( j=0 ; j < linfo[i].channels ; ++j ){
+          printf("  layer %d channel %d:\n",i,j);
+          dochannel(f,1,linfo[i].bottom-linfo[i].top,linfo[i].right-linfo[i].left,h->depth);
+        }
+      }
 		}else puts("  (layer info section is empty)");
 		
+    // process global layer mask info section
 		skipblock(f,"global layer mask info");
 
 		skip = miscstart+misclen - ftell(f);
@@ -207,6 +294,44 @@ void dolayermaskinfo(FILE *f,struct psd_header *h){
 	
 }
 
+char *finddesc(int id){
+    /* dumb linear lookup of description string from resource id */
+    /* assumes array ends with a NULL string pointer */
+    struct resdesc *p = rdesc;
+    if(id>=2000 && id<2999) return "path"; // special case
+    while(p->str && p->id != id)
+      ++p;
+    return p->str;
+}
+
+long doirb(FILE *f){
+    char type[4],name[0x100],*d;
+    int id,namelen;
+    long size;
+    
+    fread(type,1,4,f);
+    id = get2B(f);
+    namelen = fgetc(f);
+    fread(name,1,PAD2(1+namelen)-1,f);
+    name[namelen] = 0;
+    size = get4B(f);
+    fseek(f,PAD2(size),SEEK_CUR);
+    
+    printf("  resource '%c%c%c%c' (%5d,\"%s\"):%5ld bytes",
+      type[0],type[1],type[2],type[3],id,name,size);
+    if( d = finddesc(id) ) printf(" [%s]",d);
+    putchar('\n');
+    
+    return 4+2+PAD2(1+namelen)+4+PAD2(size); /* returns total bytes in block */
+}
+
+void doimageresources(FILE *f){
+    long len = get4B(f);
+    while(len>0)
+      len -= doirb(f);
+    if(len != 0) fprintf(stderr,"# warning: image resources overran expected size by %d bytes\n",-len);
+}
+
 int main(int argc,char *argv[]){
 	struct psd_header h;
 	FILE *f;
@@ -216,10 +341,10 @@ int main(int argc,char *argv[]){
 		printf("\"%s\"\n",argv[i]);
 		if( f = fopen(argv[i],"rb") ){
 
+      // file header
 			h.sig = get4B(f);
 			h.version = get2B(f);
-			get4B(f); 
-			get2B(f); // reserved[6];
+			get4B(f); get2B(f); // reserved[6];
 			h.channels = get2B(f);
 			h.rows = get4B(f);
 			h.cols = get4B(f);
@@ -233,11 +358,11 @@ int main(int argc,char *argv[]){
 					h.mode, h.mode >= 0 && h.mode < 16 ? mode_names[h.mode] : "???");
 
 				skipblock(f,"color mode data");
-				skipblock(f,"image resources");
-				//skipblock(f,"layer & mask info");
-				dolayermaskinfo(f,&h);
-				
-				printf("\n  image data @ offset %ld:\n",ftell(f));
+				doimageresources(f); //skipblock(f,"image resources");
+				dolayermaskinfo(f,&h); //skipblock(f,"layer & mask info");
+        
+				// now process image data
+				printf("\n  (merged) image data @ offset %ld:\n",ftell(f));
 				dochannel(f,h.channels,h.rows,h.cols,h.depth);
 
 				puts("  END");
