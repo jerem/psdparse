@@ -21,48 +21,20 @@
   15-Oct-2004: 0.1 commenced
   19-Oct-2004: 0.1b1 released
   26-Mar-2005: 1.0b1 significant bugs in layer handling fixed
+  01-Apr-2005: began code to create PNGs of layers
   05-Apr-2005: 1.1 last version of dump-only tool
+  05-Apr-2005: 1.2 merge PNG extraction code
 */
 #include <stdio.h>
 #include <stdlib.h>
 
-//#include "pigeneral.h"
+#include "psdparse.h"
+
+#define VERBOSE if(verbose) printf
 
 enum{ CONTEXTROWS = 3 };
 
-#define PAD2(x) (((x)+1) & -2) // same or next even
-#define PAD4(x) (((x)+3) & -4) // same or next multiple of 4
-
-struct psd_header{
-	long sig;
-	short version;
-	char reserved[6];
-	short channels;
-	long rows;
-	long cols;
-	short depth;
-	short mode;
-};
-struct layer_info{
-	long top;
-	long left;
-	long bottom;
-	long right;
-	short channels;
-};
-struct blend_mode_info{
-  char sig[4];
-  char key[4];
-  unsigned char opacity;
-  unsigned char clipping;
-  unsigned char flags;
-  unsigned char filler;
-};
-
-struct resdesc {
-  int id;
-  char *str;
-} rdesc[] = {
+struct resdesc rdesc[] = {
   1000,"PS2.0 mode data",
   1001,"Macintosh print record",
   1003,"PS2.0 indexed color table",
@@ -124,6 +96,9 @@ char *mode_names[]={
 	"Lab48", "CMYK64", "DeepMultichannel", "Duotone16"
 };
 
+int verbose = 0,mergedalpha = 0,makedirs = 0;
+char *pngdir = NULL;
+
 void fatal(char *s){ fputs(s,stderr); exit(EXIT_FAILURE); }
 
 long get4B(FILE *f){
@@ -142,89 +117,140 @@ void skipblock(FILE *f,char *desc){
 	long n = get4B(f);
 	if(n){
 		fseek(f,n,SEEK_CUR);
-		printf("  ...skipped %s (%ld bytes)\n",desc,n);
+		VERBOSE("  ...skipped %s (%ld bytes)\n",desc,n);
 	}else
-		printf("  (%s is empty)\n",desc);
+		VERBOSE("  (%s is empty)\n",desc);
 }
 
 void dumprow(unsigned char *b,int n){
 	int k,m;
 	m = n>25 ? 25 : n;
 	for(k=0;k<m;++k) 
-		printf("%02x",b[k]);
-	if(n>m) printf(" ...%d more",n-m);
-	putchar('\n');
+		VERBOSE("%02x",b[k]);
+	if(n>m) VERBOSE(" ...%d more",n-m);
+	VERBOSE("\n");
 }
 
-void dochannel(FILE *f,int channels,int rows,int cols,int depth){
-	int j,n,comp,rb,ch,dumpit;
-	long scanline,compdata,rawdata;
+int dochannel(FILE *f,int channels,int rows,int cols,int depth,long rowpos[]){
+	int j,k,n,rb,ch,dumpit;
+	long scanline,compdata,pos;
 	unsigned char *rowbuf;
-	unsigned short *rlebuf;
-  enum{RAWDATA,RLECOMP};
+	unsigned *rlebuf;
+  static char *comptype[] = {"raw","RLE"};
 	
-	comp = get2B(f);
-	printf("  compression = %d (%s)\n",
-    comp,comp==RLECOMP ? "RLE" : (comp==RAWDATA ? "raw" : "???"));
+  unsigned comp = get2B(f);
+  VERBOSE("  compression = %d (%s)\n", comp,comp<2 ? comptype[comp] : "???");
 
-	rb = (channels*cols*depth + 7)/8;
-	rawdata = (long)channels*rows*rb;
-	printf("  uncompressed size %ld bytes (row bytes = %d)\n",rawdata,rb);
+  rb = (cols*depth + 7)/8;
+  VERBOSE("  uncompressed size %ld bytes (row bytes = %d)\n",(long)channels*rows*rb,rb);
 
-	rowbuf = malloc(rb*2); /* slop for possible RLE overhead */
-	if(comp == RLECOMP){
-		n = channels*rows;
-		rlebuf = malloc(n*sizeof(short));
-		for(j=0;j<n && !feof(f);++j)
-			rlebuf[j] = get2B(f);
-		if(j < n)
-			fatal("# couldn't read RLE counts");
-	}
+  rowbuf = malloc(rb*2); /* slop for worst case RLE overhead (usually (rb/127+1) ) */
+  pos = ftell(f);
+  if(comp == RLECOMP){
+    rlebuf = malloc(channels*rows*sizeof(unsigned));
+    pos += 2*channels*rows; /* skip over RLE counts */
+    for(ch=k=0;ch<channels;++ch){
+      for(j=0;j<rows && !feof(f);++j){
+        rlebuf[k] = get2B(f);
+        if(rowpos){ /* store file position of row's RLE data */
+          //printf("RLE data row %4d @ %7ld\n",k,pos);
+          rowpos[k] = pos;
+          pos += rlebuf[k];
+          ++k;
+        }
+      }
+      if(rowpos) rowpos[k++] = pos;
+      if(j < rows) fatal("# couldn't read RLE counts");
+    }
+  }else 
+    if(rowpos){
+      for(ch=k=0;ch<channels;++ch){
+        for(j=0;j<rows;++j){ /* store file position of row's raw data */
+          //printf("Raw data row %4d @ %7ld\n",k,pos);
+          rowpos[k++] = pos;
+          pos += rb;
+        }
+        rowpos[k++] = pos;
+      }
+    }
 
-	for(ch=scanline=compdata=0 ; ch < channels ; ++ch){
-		if(channels>1)
-			printf("    channel %d:\n",ch);
+	for(ch = scanline = 0 ; ch < channels ; ++ch){
+		if(channels>1) VERBOSE("    channel %d:\n",ch);
 		for(j=0;j<rows;++j){
 			if(rows > 3*CONTEXTROWS){
 				if(j==rows-CONTEXTROWS) 
-					printf("    ...%d rows not shown...\n",rows-2*CONTEXTROWS);
+					VERBOSE("    ...%d rows not shown...\n",rows-2*CONTEXTROWS);
 				dumpit = j<CONTEXTROWS || j>=rows-CONTEXTROWS;
 			}else 
 				dumpit = 1;
         
 			if(comp == RLECOMP){
 				n = rlebuf[scanline++];
-				compdata += n;
 				if(fread(rowbuf,1,n,f) == n){
 					if(dumpit){
-						printf("    %4d: <%4d> ",j,n);
+						VERBOSE("    %4d: <%4d> ",j,n);
 						dumprow(rowbuf,n);
 					}
 				}else fatal("# couldn't read RLE row!\n");
 			}else if(comp == RAWDATA){
 				if(fread(rowbuf,1,rb,f) == rb){
 					if(dumpit){
-						printf("    %4d: ",j);
+						VERBOSE("    %4d: ",j);
 						dumprow(rowbuf,rb);
 					}
 				}else fatal("# couldn't read raw row!\n");
 			}else fatal("# bad compression value\n");
 		}
 	}
-	putchar('\n');	
+	VERBOSE("\n");
 
 	if(comp == RLECOMP) free(rlebuf);
 	free(rowbuf);
+  
+  return comp;
 }
 
 #define BITSTR(f) ((f) ? "(1)" : "(0)")
 
+void doimage(FILE *f,char *name,int merged,int channels,
+             int rows,int cols,struct psd_header *h){
+  int i,ch,comp;
+  long **rowpos = malloc(sizeof(long*) * channels);
+  int *chcomp = malloc(sizeof(int) * channels);
+  FILE *png = NULL; /* file handle to the output PNG file */
+  
+  if(pngdir)
+    png = pngsetupwrite(f, pngdir, name, cols, rows, channels, merged, h);
+
+  rowpos[0] = malloc(sizeof(long)*channels*(rows+1));
+  for( ch=1 ; ch < channels ; ++ch )
+    rowpos[ch] = rowpos[0] + ch*(rows+1);
+    
+  if(merged){
+    VERBOSE("  merged channels:\n");
+    comp = dochannel(f,channels,rows,cols,h->depth,rowpos[0]);
+    for(ch=0;ch<channels;++ch) 
+      chcomp[ch] = comp; /* compression same for each merged channel */
+  }else
+    for( ch=0 ; ch < channels ; ++ch ){
+      VERBOSE("  channel %d:\n",ch);
+      chcomp[ch] = dochannel(f,1,rows,cols,h->depth,rowpos[ch]);
+    }
+  
+  if(png) pngwriteimage(f,chcomp,rowpos,channels,rows,cols,h->depth);
+  
+  /* free memory for row position data */
+  free(rowpos[0]);
+  free(rowpos);
+  free(chcomp);
+}
+
 void dolayermaskinfo(FILE *f,struct psd_header *h){
 	long miscstart,misclen,layerlen,chlen,skip,extrastart,extralen;
 	short nlayers;
-	int i,j,chid,namelen;
-  char name[0x100];
-	static struct layer_info *linfo;
+	int i,j,chid,namelen,rows,cols;
+	struct layer_info *linfo;
+  char **lname;
   struct blend_mode_info bm;
 	
 	if(misclen = get4B(f)){
@@ -236,15 +262,16 @@ void dolayermaskinfo(FILE *f,struct psd_header *h){
 			nlayers = get2B(f);
 			if(nlayers<0){
 				nlayers = -nlayers;
-				puts("  (first alpha is transparency for merged image)");
+				VERBOSE("  (first alpha is transparency for merged image)");
+        mergedalpha = 1;
 			}
       printf("  nlayers = %d\n",nlayers);
-	if( !(linfo = malloc(nlayers*sizeof(struct layer_info))) ){
-		fputs("# couldn't get memory for layer info!\n",stderr);
-		exit(EXIT_FAILURE);
-	}
+    	if( !(linfo = malloc(nlayers*sizeof(struct layer_info)))
+       || !(lname = malloc(nlayers*sizeof(char*))) ){
+    		fputs("# couldn't get memory for layer info!\n",stderr);
+    		exit(EXIT_FAILURE);
+    	}
 		
-      
 			for(i=0;i<nlayers;++i){
         // process layer record
 				linfo[i].top = get4B(f);
@@ -253,14 +280,14 @@ void dolayermaskinfo(FILE *f,struct psd_header *h){
 				linfo[i].right = get4B(f);
 				linfo[i].channels = get2B(f);
 
-				printf("\n  layer %d: (%d,%d,%d,%d), %d channels (%d rows x %d cols)\n",
+				printf("  layer %d: (%d,%d,%d,%d), %d channels (%d rows x %d cols)\n",
 					i, linfo[i].top, linfo[i].left, linfo[i].bottom, linfo[i].right, linfo[i].channels,
 					linfo[i].bottom-linfo[i].top, linfo[i].right-linfo[i].left);
 	
 				for( j=0 ; j < linfo[i].channels ; ++j ){
 					chid = get2B(f);
 					chlen = get4B(f);
-					printf("    channel %2d: id=%2d, %5d bytes\n",j,chid,chlen);
+					VERBOSE("    channel %2d: id=%2d, %5d bytes\n",j,chid,chlen);
 				}
 				
         fread(bm.sig,1,4,f);
@@ -269,7 +296,7 @@ void dolayermaskinfo(FILE *f,struct psd_header *h){
         bm.clipping = fgetc(f);
         bm.flags = fgetc(f);
         bm.filler = fgetc(f);
-        printf("  blending mode: sig='%c%c%c%c' key='%c%c%c%c' opacity=%d(%d%%) clipping=%d(%s)\n\
+        VERBOSE("  blending mode: sig='%c%c%c%c' key='%c%c%c%c' opacity=%d(%d%%) clipping=%d(%s)\n\
     flags=%#x(transp_prot%s visible%s bit4valid%s pixel_data_relevant%s)\n",
           bm.sig[0],bm.sig[1],bm.sig[2],bm.sig[3],
           bm.key[0],bm.key[1],bm.key[2],bm.key[3],
@@ -284,22 +311,23 @@ void dolayermaskinfo(FILE *f,struct psd_header *h){
 
         skipblock(f,"layer mask data");
         skipblock(f,"layer blending ranges");
+        
         // layer name
         namelen = fgetc(f);
-        fread(name,1,PAD4(1+namelen),f);
-        name[namelen] = 0;
-        printf("  layer name: \"%s\"\n",name);
+        lname[i] = malloc(PAD4(1+namelen));
+        fread(lname[i],1,PAD4(1+namelen),f);
+        lname[i][namelen] = 0;
+        printf("  layer name: \"%s\"\n",lname[i]);
         
         fseek(f,extrastart+extralen,SEEK_SET); // skip over any extra data
 			}
       
       for(i=0;i<nlayers;++i){
-        for( j=0 ; j < linfo[i].channels ; ++j ){
-          printf("  layer %d channel %d:\n",i,j);
-          dochannel(f,1,linfo[i].bottom-linfo[i].top,linfo[i].right-linfo[i].left,h->depth);
-        }
+        VERBOSE("  layer %d (\"%s\"):\n",i,lname[i]);
+        doimage(f, lname[i], 0/*not merged*/, linfo[i].channels, 
+                linfo[i].bottom-linfo[i].top, linfo[i].right-linfo[i].left, h);
       }
-		}else puts("  (layer info section is empty)");
+		}else VERBOSE("  (layer info section is empty)\n");
 		
     // process global layer mask info section
 		skipblock(f,"global layer mask info");
@@ -310,7 +338,7 @@ void dolayermaskinfo(FILE *f,struct psd_header *h){
 			fseek(f,skip,SEEK_CUR);
 		}
 		
-	}else puts("  (misc info section is empty)");
+	}else VERBOSE("  (misc info section is empty)\n");
 	
 }
 
@@ -337,10 +365,10 @@ long doirb(FILE *f){
     size = get4B(f);
     fseek(f,PAD2(size),SEEK_CUR);
     
-    printf("  resource '%c%c%c%c' (%5d,\"%s\"):%5ld bytes",
+    VERBOSE("  resource '%c%c%c%c' (%5d,\"%s\"):%5ld bytes",
       type[0],type[1],type[2],type[3],id,name,size);
-    if( d = finddesc(id) ) printf(" [%s]",d);
-    putchar('\n');
+    if( d = finddesc(id) ) VERBOSE(" [%s]",d);
+    VERBOSE("\n");
     
     return 4+2+PAD2(1+namelen)+4+PAD2(size); /* returns total bytes in block */
 }
@@ -356,39 +384,54 @@ int main(int argc,char *argv[]){
 	struct psd_header h;
 	FILE *f;
 	int i;
+  char *base;
+
+  /* look for option flags */
+  for(i=1;i<argc;++i)
+    if(argv[i][0] == '-'){
+      if(!strcmp(argv[i],"-v")) verbose = 1;
+      else if(!strncmp(argv[i],"-pngdir=",8)) pngdir = argv[i]+8;
+      else if(!strcmp(argv[i],"-makedirs")) makedirs = 1;
+      else fprintf(stderr,"# bad option %s\nusage: %s [-v] [-png] psdfile...\n\
+  -v            verbose information\n\
+  -pngdir=path  write PNG files of raster layers into directory\n\
+  -makedirs     create subdirectory for PNG if layer name has /'s\n", argv[i], argv[0]);
+    }
 
 	for( i=1 ; i<argc ; ++i ){
-		printf("\"%s\"\n",argv[i]);
-		if( f = fopen(argv[i],"rb") ){
-
-      // file header
-			h.sig = get4B(f);
-			h.version = get2B(f);
-			get4B(f); get2B(f); // reserved[6];
-			h.channels = get2B(f);
-			h.rows = get4B(f);
-			h.cols = get4B(f);
-			h.depth = get2B(f);
-			h.mode = get2B(f);
-
-			if(!feof(f) && h.sig == '8BPS' && h.version == 1){
-
-				printf("  channels = %d, rows = %ld, cols = %ld, depth = %d, mode = %d (%s)\n",
-					h.channels, h.rows, h.cols, h.depth,
-					h.mode, h.mode >= 0 && h.mode < 16 ? mode_names[h.mode] : "???");
-
-				skipblock(f,"color mode data");
-				doimageresources(f); //skipblock(f,"image resources");
-				dolayermaskinfo(f,&h); //skipblock(f,"layer & mask info");
-        
-				// now process image data
-				puts("\n  (merged) image data:");
-				dochannel(f,h.channels,h.rows,h.cols,h.depth);
-
-				puts("  END");
-			}else fatal("# couldn't read header, is not a PSD, or version is not 1!\n");
-			fclose(f);
-		}else fatal("# couldn't open!\n");
+		if( argv[i][0] != '-' )
+      if(f = fopen(argv[i],"rb")){
+        printf("\"%s\"\n",argv[i]);
+        // file header
+  			h.sig = get4B(f);
+  			h.version = get2B(f);
+  			get4B(f); get2B(f); // reserved[6];
+  			h.channels = get2B(f);
+  			h.rows = get4B(f);
+  			h.cols = get4B(f);
+  			h.depth = get2B(f);
+  			h.mode = get2B(f);
+  
+  			if(!feof(f) && h.sig == '8BPS' && h.version == 1){
+  
+  				printf("  channels = %d, rows = %ld, cols = %ld, depth = %d, mode = %d (%s)\n",
+  					h.channels, h.rows, h.cols, h.depth,
+  					h.mode, h.mode >= 0 && h.mode < 16 ? mode_names[h.mode] : "???");
+  
+          h.colormodepos = ftell(f);
+  				skipblock(f,"color mode data");
+  				doimageresources(f); //skipblock(f,"image resources");
+  				dolayermaskinfo(f,&h); //skipblock(f,"layer & mask info");
+          
+  				// now process image data
+          base = strrchr(argv[i],DIRSEP);
+          doimage(f,base ? base+1 : argv[i],1/*merged*/,h.channels,h.rows,h.cols,&h);
+  				//dochannel(f,h.channels,h.rows,h.cols,h.depth,NULL);
+  
+  				puts("  done.");
+  			}else fprintf(stderr,"# \"%s\": couldn't read header, is not a PSD, or version is not 1!\n",argv[i]);
+  			fclose(f);
+  		}else fprintf(stderr,"# \"%s\": couldn't open\n",argv[i]);
 	}
 	return EXIT_SUCCESS;
 }

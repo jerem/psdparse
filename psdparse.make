@@ -15,17 +15,32 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 
-OBJ    = psdparse.c.x
+PNGDIR = ::libpng-1.2.8:
+PNGOBJ = ¶
+	{PNGDIR}png.c.x {PNGDIR}pngerror.c.x {PNGDIR}pnggccrd.c.x {PNGDIR}pngget.c.x ¶
+	{PNGDIR}pngmem.c.x {PNGDIR}pngpread.c.x {PNGDIR}pngread.c.x {PNGDIR}pngrio.c.x ¶
+	{PNGDIR}pngrtran.c.x {PNGDIR}pngrutil.c.x {PNGDIR}pngset.c.x {PNGDIR}pngtest.c.x ¶
+	{PNGDIR}pngtrans.c.x {PNGDIR}pngvcrd.c.x {PNGDIR}pngwio.c.x {PNGDIR}pngwrite.c.x ¶
+	{PNGDIR}pngwtran.c.x {PNGDIR}pngwutil.c.x 
 
-LIB    =  ¶
-				  "{SharedLibraries}InterfaceLib" ¶
-				  "{SharedLibraries}StdCLib" ¶
-				  "{SharedLibraries}MathLib" ¶
-				  "{PPCLibraries}StdCRuntime.o" ¶
-				  "{PPCLibraries}PPCCRuntime.o" ¶
-				  "{PPCLibraries}PPCToolLibs.o"
+ZLIBDIR = ::zlib-1.2.2:
+ZLIBOBJ = ¶
+	{ZLIBDIR}adler32.c.x {ZLIBDIR}compress.c.x {ZLIBDIR}crc32.c.x ¶
+	{ZLIBDIR}deflate.c.x {ZLIBDIR}example.c.x {ZLIBDIR}gzio.c.x {ZLIBDIR}infback.c.x ¶
+	{ZLIBDIR}inffast.c.x {ZLIBDIR}inflate.c.x {ZLIBDIR}inftrees.c.x ¶
+	{ZLIBDIR}trees.c.x {ZLIBDIR}uncompr.c.x {ZLIBDIR}zutil.c.x
 
-CFLAGS = -d MAC_ENV -w 2
+OBJ =	psdparse.c.x png.c.x unpackbits.c.x mkdir_mpw.c.x {PNGOBJ} {ZLIBOBJ}
+
+LIB =	"{SharedLibraries}InterfaceLib" ¶
+		"{SharedLibraries}StdCLib" ¶
+		"{SharedLibraries}MathLib" ¶
+		"{PPCLibraries}StdCRuntime.o" ¶
+		"{PPCLibraries}PPCCRuntime.o" ¶
+		"{PPCLibraries}PPCToolLibs.o"
+
+# "-enum int -d STDC" are needed to make zlib build happily
+CFLAGS = -enum int -d STDC -d MAC_ENV -d DIRSEP=¶':¶' -i {PNGDIR},{ZLIBDIR} -w 2
 
 .c.x  Ä  .c
 	{PPCC} {depDir}{default}.c -o {targDir}{default}.c.x {CFLAGS}

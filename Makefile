@@ -15,12 +15,17 @@
 #    along with this program; if not, write to the Free Software
 #    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 
-CFLAGS = -O2 -DMAC_ENV # -I../PhotoshopAPI/Photoshop -I../PhotoshopAPI/Pica_SP
+PNGDIR = ../libpng-1.2.8
+CPPFLAGS = -DDIRSEP=\'/\'
+CFLAGS = -O2 -DMAC_ENV -I$(PNGDIR)
+LDFLAGS = -L$(PNGDIR) -lpng12 -lz
+
+OBJ = psdparse.o png.o unpackbits.o
 
 all : psdparse
 
 clean : 
-	rm -f psdparse psdparse.o
+	rm -f psdparse $(OBJ)
 
 SRCARCHIVE = psdparse.tar.gz
 
@@ -29,10 +34,11 @@ gpl.html :
 
 src : $(SRCARCHIVE)
 
-$(SRCARCHIVE) : README.txt gpl.html Makefile psdparse.make psdparse.c 
+$(SRCARCHIVE) : README.txt gpl.html Makefile psdparse.make psdparse.c png.c unpackbits.c
 	tar -czf $@ $^
 	#zip -9 psdparse.zip $^
 
-psdparse : psdparse.o
+psdparse : $(OBJ)
+
 
 
