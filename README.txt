@@ -8,15 +8,22 @@ of PSD images. Tested with PSDs created by PS 5.5 and PS 7.0.
 
 BUILDING
 
-To build, simply type "make" in the source directory. 
-A UNIX or UNIX-compatible environment is required (e.g. Linux or OS X).
+To build on a UNIX or UNIX compatible system, simply type "make" 
+in the source directory. 
 
-OS X users: the Developer Tools must be installed 
+Mac OS X users: the Developer Tools must be installed 
 (see the CDs that came with your Mac, or download from 
 http://developer.apple.com/tools/download/).
 
+MPW (Mac OS 7,8,9,Classic) users:
+An MPW makefile is provided. Simply Build Program "psdparse".
+
 Windows users: use Cygwin http://cygwin.com/, MinGW http://mingw.org/,
-or upgrade to Linux.
+or upgrade to Linux. Alternatively, the code can probably be built 
+with a freely downloadable toolset such as:
+* http://www.borland.com/products/downloads/download_cbuilder.html
+* http://www.openwatcom.org/download/download_licenses.html
+* http://www.digitalmars.com/download/dmcpp.html
 
 USING
 
