@@ -63,8 +63,7 @@ struct resdesc {
   int id;
   char *str;
 } rdesc[] = {
-  1000,"PS2.0 mode data", // Obsolete—Photoshop 2.0 only. Contains five 2 byte values:
-  // number of channels, rows, columns, depth, and mode.
+  1000,"PS2.0 mode data",
   1001,"Macintosh print record",
   1003,"PS2.0 indexed color table",
   1005,"ResolutionInfo",
