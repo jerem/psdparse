@@ -18,9 +18,10 @@
 */
 
 /* version history:
-	15-Oct-2004: 0.1 commenced
-	19-Oct-2004: 0.1b1 released
+  15-Oct-2004: 0.1 commenced
+  19-Oct-2004: 0.1b1 released
   26-Mar-2005: 1.0b1 significant bugs in layer handling fixed
+  05-Apr-2005: 1.1 last version of dump-only tool
 */
 #include <stdio.h>
 #include <stdlib.h>
