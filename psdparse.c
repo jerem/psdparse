@@ -49,14 +49,13 @@ struct layer_info{
 	long right;
 	short channels;
 };
-struct layer_info2{
-	long blendmodesig;
-	long blendmodekey;
-	char opacity;
-	char clipping;
-	char flags;
-	char filler;
-	//long extradatasize;
+struct blend_mode_info{
+  char sig[4];
+  char key[4];
+  unsigned char opacity;
+  unsigned char clipping;
+  unsigned char flags;
+  unsigned char filler;
 };
 
 struct resdesc {
@@ -217,12 +216,15 @@ void dochannel(FILE *f,int channels,int rows,int cols,int depth){
 	free(rowbuf);
 }
 
+#define BITSTR(f) ((f) ? "(1)" : "(0)")
+
 void dolayermaskinfo(FILE *f,struct psd_header *h){
 	long miscstart,misclen,layerlen,chlen,skip,extrastart,extralen;
 	short nlayers;
 	int i,j,chid,namelen;
   char name[0x100];
 	static struct layer_info *linfo;
+  struct blend_mode_info bm;
 	
 	if(misclen = get4B(f)){
 		miscstart = ftell(f);
@@ -260,7 +262,20 @@ void dolayermaskinfo(FILE *f,struct psd_header *h){
 					printf("    channel %2d: id=%2d, %5d bytes\n",j,chid,chlen);
 				}
 				
-				fseek(f,12,SEEK_CUR); // skip blending sig, key, opacity
+        fread(bm.sig,1,4,f);
+        fread(bm.key,1,4,f);
+        bm.opacity = fgetc(f);
+        bm.clipping = fgetc(f);
+        bm.flags = fgetc(f);
+        bm.filler = fgetc(f);
+        printf("  blending mode: sig='%c%c%c%c' key='%c%c%c%c' opacity=%d(%d%%) clipping=%d(%s)\n\
+    flags=%#x(transp_prot%s visible%s bit4valid%s pixel_data_relevant%s)\n",
+          bm.sig[0],bm.sig[1],bm.sig[2],bm.sig[3],
+          bm.key[0],bm.key[1],bm.key[2],bm.key[3],
+          bm.opacity,(bm.opacity*100+127)/255,
+          bm.clipping,bm.clipping ? "non-base" : "base",
+          bm.flags, BITSTR(bm.flags&1),BITSTR(bm.flags&2),BITSTR(bm.flags&8),BITSTR(bm.flags&16) );
+
 				//skipblock(f,"layer info: extra data");
         extralen = get4B(f);
         extrastart = ftell(f);
