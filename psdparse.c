@@ -26,7 +26,6 @@
 
 //#include "pigeneral.h"
 
-#pragma options align=mac68k
 struct psd_header{
 	long sig;
 	short version;
@@ -53,7 +52,6 @@ struct layer_info2{
 	char filler;
 	//long extradatasize;
 };
-#pragma options align=reset
 
 char *mode_names[]={
 	"Bitmap", "GrayScale", "IndexedColor", "RGBColor",
