@@ -27,7 +27,7 @@
 
 //#include "pigeneral.h"
 
-enum{ MAXLAYERS = 64, CONTEXTROWS = 3 };
+enum{ CONTEXTROWS = 3 };
 
 #define PAD2(x) (((x)+1) & -2) // same or next even
 #define PAD4(x) (((x)+3) & -4) // same or next multiple of 4
@@ -222,7 +222,7 @@ void dolayermaskinfo(FILE *f,struct psd_header *h){
 	short nlayers;
 	int i,j,chid,namelen;
   char name[0x100];
-	struct layer_info linfo[MAXLAYERS];
+	static struct layer_info *linfo;
 	
 	if(misclen = get4B(f)){
 		miscstart = ftell(f);
@@ -236,6 +236,11 @@ void dolayermaskinfo(FILE *f,struct psd_header *h){
 				puts("  (first alpha is transparency for merged image)");
 			}
       printf("  nlayers = %d\n",nlayers);
+	if( !(linfo = malloc(nlayers*sizeof(struct layer_info))) ){
+		fputs("# couldn't get memory for layer info!\n",stderr);
+		exit(EXIT_FAILURE);
+	}
+		
       
 			for(i=0;i<nlayers;++i){
         // process layer record
@@ -285,7 +290,7 @@ void dolayermaskinfo(FILE *f,struct psd_header *h){
 
 		skip = miscstart+misclen - ftell(f);
 		if(skip){
-			fprintf(stderr,"# warning: skipped %d spurious bytes at end of misc data?\n",skip);
+			fprintf(stderr,"# warning: skipped %d bytes at end of misc data?\n",skip);
 			fseek(f,skip,SEEK_CUR);
 		}
 		
@@ -361,7 +366,7 @@ int main(int argc,char *argv[]){
 				dolayermaskinfo(f,&h); //skipblock(f,"layer & mask info");
         
 				// now process image data
-				printf("\n  (merged) image data @ offset %ld:\n",ftell(f));
+				puts("\n  (merged) image data:");
 				dochannel(f,h.channels,h.rows,h.cols,h.depth);
 
 				puts("  END");
