@@ -1,5 +1,5 @@
 /*
-	This file is part of "psdparse"
+    This file is part of "psdparse"
     Copyright (C) 2004-5 Toby Thain, toby@telegraphics.com.au
 
     This program is free software; you can redistribute it and/or modify
