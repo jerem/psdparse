@@ -1,6 +1,6 @@
 /*
 	This file is part of "psdparse"
-    Copyright (C) 2004 Toby Thain, toby@telegraphics.com.au
+    Copyright (C) 2004-5 Toby Thain, toby@telegraphics.com.au
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by  
@@ -20,7 +20,7 @@
 /* version history:
 	15-Oct-2004: 0.1 commenced
 	19-Oct-2004: 0.1b1 released
-  26-Mar-2005: 1.0 significant bugs in layer handling fixed
+  26-Mar-2005: 1.0b1 significant bugs in layer handling fixed
 */
 #include <stdio.h>
 #include <stdlib.h>
