@@ -22,15 +22,16 @@ all : psdparse
 clean : 
 	rm -f psdparse psdparse.o
 
-SRCARCHIVE = psdparse.zip
+SRCARCHIVE = psdparse.tar.gz
 
 gpl.html : 
 	curl http://www.gnu.org/licenses/gpl.html | sed -e 's%</HEAD>%<BASE HREF="http://www.gnu.org/"> </HEAD>%' > $@
 
 src : $(SRCARCHIVE)
 
-$(SRCARCHIVE) : Makefile psdparse.c gpl.html
-	zip -9 psdparse.zip $^
+$(SRCARCHIVE) : README.txt gpl.html Makefile psdparse.make psdparse.c 
+	tar -czf $@ $^
+	#zip -9 psdparse.zip $^
 
 psdparse : psdparse.o
 
