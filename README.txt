@@ -13,7 +13,20 @@ Tested with PSDs created by PS 5.5, 7.0 and CS,
 in Bitmap, Indexed, Grey Scale and RGB Colour modes
 and 8/16 bit depths.
 
+This software uses zlib which is (C) Jean-loup Gailly and Mark Adler.
+
 BUILDING
+
+Prerequisites:
+* zlib (often already installed on Linux or OS X)
+  Download via http://www.gzip.org/zlib/
+  Makefile statically links with v1.2.2. Extract alongside psdparse directory.
+* libpng
+  Download via http://www.libpng.org/pub/png/libpng.html
+  Makefile statically links with v1.2.8. Extract alongside psdparse directory.
+
+If your system has these libraries as shared library packages,
+you can use those with appropriate changes to the Makefile.
 
 To build on a UNIX or UNIX compatible system, simply type "make" 
 in the source directory. 
