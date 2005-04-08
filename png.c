@@ -32,7 +32,7 @@ FILE* pngsetupwrite(FILE *psd, char *dir, char *name, int width, int height,
           strcpy(d,dir);
           strcat(d,dirsep);
           strcat(d,name);
-          if(!mkdir(d,0755)) printf("# made subdirectory \"%s\"\n",d);
+          if(!mkdir(d,0755)) VERBOSE("# made subdirectory \"%s\"\n",d);
           last[0] = DIRSEP;
         }else 
           last[0] = '_';
@@ -68,7 +68,7 @@ FILE* pngsetupwrite(FILE *psd, char *dir, char *name, int width, int height,
             
       if(f = fopen(pngname,"wb")){
         
-        printf("# writing PNG (%3dx%3d, depth=%d, type=%d) \"%s\" \n", 
+        UNQUIET("# writing PNG (%3dx%3d, depth=%d, type=%d) \"%s\" \n", 
           width,height,h->depth,color_type,pngname);
         
         png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
