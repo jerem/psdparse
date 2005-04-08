@@ -7,6 +7,7 @@ png_structp png_ptr;
 png_infop info_ptr;
 
 extern char *mode_names[];
+extern int verbose,quiet;
 
 FILE* pngsetupwrite(FILE *psd, char *dir, char *name, int width, int height, 
                     int channels, int merged, struct psd_header *h){

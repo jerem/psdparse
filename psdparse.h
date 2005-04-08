@@ -23,6 +23,9 @@ enum{RAWDATA,RLECOMP};
 #define PAD2(x) (((x)+1) & -2) // same or next even
 #define PAD4(x) (((x)+3) & -4) // same or next multiple of 4
 
+#define VERBOSE if(verbose) printf
+#define UNQUIET if(!quiet) printf
+
 struct psd_header{
   long sig;
   short version;

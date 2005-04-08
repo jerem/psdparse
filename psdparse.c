@@ -30,9 +30,6 @@
 
 #include "psdparse.h"
 
-#define VERBOSE if(verbose) printf
-#define UNQUIET if(!quiet) printf
-
 enum{ CONTEXTROWS = 3 };
 
 struct resdesc rdesc[] = {
@@ -319,7 +316,7 @@ void dolayermaskinfo(FILE *f,struct psd_header *h){
         fread(lname[i],1,PAD4(1+namelen),f);
         lname[i][namelen] = 0;
         UNQUIET("  layer name: \"%s\"\n",lname[i]);
-        
+
         fseek(f,extrastart+extralen,SEEK_SET); // skip over any extra data
 			}
       
