@@ -31,6 +31,7 @@
 #include "psdparse.h"
 
 #define VERBOSE if(verbose) printf
+#define UNQUIET if(!quiet) printf
 
 enum{ CONTEXTROWS = 3 };
 
@@ -96,7 +97,7 @@ char *mode_names[]={
 	"Lab48", "CMYK64", "DeepMultichannel", "Duotone16"
 };
 
-int verbose = 0,mergedalpha = 0,makedirs = 0;
+int verbose = 0,quiet = 0,mergedalpha = 0,makedirs = 0;
 char *pngdir = NULL;
 
 void fatal(char *s){ fputs(s,stderr); exit(EXIT_FAILURE); }
@@ -265,7 +266,7 @@ void dolayermaskinfo(FILE *f,struct psd_header *h){
 				VERBOSE("  (first alpha is transparency for merged image)");
         mergedalpha = 1;
 			}
-      printf("  nlayers = %d\n",nlayers);
+      UNQUIET("  nlayers = %d\n",nlayers);
     	if( !(linfo = malloc(nlayers*sizeof(struct layer_info)))
        || !(lname = malloc(nlayers*sizeof(char*))) ){
     		fputs("# couldn't get memory for layer info!\n",stderr);
@@ -280,7 +281,7 @@ void dolayermaskinfo(FILE *f,struct psd_header *h){
 				linfo[i].right = get4B(f);
 				linfo[i].channels = get2B(f);
 
-				printf("  layer %d: (%d,%d,%d,%d), %d channels (%d rows x %d cols)\n",
+				UNQUIET("  layer %d: (%d,%d,%d,%d), %d channels (%d rows x %d cols)\n",
 					i, linfo[i].top, linfo[i].left, linfo[i].bottom, linfo[i].right, linfo[i].channels,
 					linfo[i].bottom-linfo[i].top, linfo[i].right-linfo[i].left);
 	
@@ -317,7 +318,7 @@ void dolayermaskinfo(FILE *f,struct psd_header *h){
         lname[i] = malloc(PAD4(1+namelen));
         fread(lname[i],1,PAD4(1+namelen),f);
         lname[i][namelen] = 0;
-        printf("  layer name: \"%s\"\n",lname[i]);
+        UNQUIET("  layer name: \"%s\"\n",lname[i]);
         
         fseek(f,extrastart+extralen,SEEK_SET); // skip over any extra data
 			}
@@ -390,10 +391,12 @@ int main(int argc,char *argv[]){
   for(i=1;i<argc;++i)
     if(argv[i][0] == '-'){
       if(!strcmp(argv[i],"-v")) verbose = 1;
+      if(!strcmp(argv[i],"-q")) quiet = 1;
       else if(!strncmp(argv[i],"-pngdir=",8)) pngdir = argv[i]+8;
       else if(!strcmp(argv[i],"-makedirs")) makedirs = 1;
       else fprintf(stderr,"# bad option %s\nusage: %s [-v] [-png] psdfile...\n\
   -v            verbose information\n\
+  -q            work silently\n\
   -pngdir=path  write PNG files of raster layers into directory\n\
   -makedirs     create subdirectory for PNG if layer name has /'s\n", argv[i], argv[0]);
     }
@@ -401,7 +404,7 @@ int main(int argc,char *argv[]){
 	for( i=1 ; i<argc ; ++i ){
 		if( argv[i][0] != '-' )
       if(f = fopen(argv[i],"rb")){
-        printf("\"%s\"\n",argv[i]);
+        UNQUIET("\"%s\"\n",argv[i]);
         // file header
   			h.sig = get4B(f);
   			h.version = get2B(f);
@@ -414,7 +417,7 @@ int main(int argc,char *argv[]){
   
   			if(!feof(f) && h.sig == '8BPS' && h.version == 1){
   
-  				printf("  channels = %d, rows = %ld, cols = %ld, depth = %d, mode = %d (%s)\n",
+  				UNQUIET("  channels = %d, rows = %ld, cols = %ld, depth = %d, mode = %d (%s)\n",
   					h.channels, h.rows, h.cols, h.depth,
   					h.mode, h.mode >= 0 && h.mode < 16 ? mode_names[h.mode] : "???");
   
@@ -428,7 +431,7 @@ int main(int argc,char *argv[]){
           doimage(f,base ? base+1 : argv[i],1/*merged*/,h.channels,h.rows,h.cols,&h);
   				//dochannel(f,h.channels,h.rows,h.cols,h.depth,NULL);
   
-  				puts("  done.");
+  				UNQUIET("  done.\n");
   			}else fprintf(stderr,"# \"%s\": couldn't read header, is not a PSD, or version is not 1!\n",argv[i]);
   			fclose(f);
   		}else fprintf(stderr,"# \"%s\": couldn't open\n",argv[i]);
