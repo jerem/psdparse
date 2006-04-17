@@ -102,8 +102,8 @@ FILE* pngsetupwrite(FILE *psd, char *dir, char *name, int width, int height,
 						width,height,h->depth,channels,color_type,pngtype);
 
 				if( !(info_ptr = png_create_info_struct(png_ptr)) || setjmp(png_jmpbuf(png_ptr)) )
-				{ /* If we get here, we had a problem writing the file */
-					fputs("### pngsetupwrite: Fatal error in pnglib\n",stderr);
+				{ /* If we get here, libpng had a problem */
+					fputs("### pngsetupwrite: Fatal error in libpng\n",stderr);
 					fclose(f);
 					png_destroy_write_struct(&png_ptr, &info_ptr);
 					return NULL;
@@ -165,8 +165,8 @@ void pngwriteimage(FILE *psd, int comp[], long **rowpos,
 	}
 
 	if( setjmp(png_jmpbuf(png_ptr)) )
-	{ /* If we get here, we had a problem writing the file */
-		fputs("### pngwriteimage: Fatal error in pnglib\n",stderr);
+	{ /* If we get here, libpng had a problem writing the file */
+		fputs("### pngwriteimage: Fatal error in libpng\n",stderr);
 
 done:	/* put cleanup code here, so that we are sure to do it in case of a PNG error */
 		free(rowbuf);
