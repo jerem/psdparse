@@ -1,5 +1,5 @@
 # This file is part of "psdparse"
-# Copyright (C) 2004 Toby Thain, toby@telegraphics.com.au
+# Copyright (C) 2004-6 Toby Thain, toby@telegraphics.com.au
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by  
@@ -30,7 +30,7 @@ ZLIBOBJ = ¶
 	{ZLIBDIR}inffast.c.x {ZLIBDIR}inflate.c.x {ZLIBDIR}inftrees.c.x ¶
 	{ZLIBDIR}trees.c.x {ZLIBDIR}uncompr.c.x {ZLIBDIR}zutil.c.x
 
-OBJ =	psdparse.c.x png.c.x unpackbits.c.x mkdir_mpw.c.x {PNGOBJ} {ZLIBOBJ}
+OBJ =	main.c.x writepng.c.x unpackbits.c.x mkdir_unimpl.c.x {PNGOBJ} {ZLIBOBJ}
 
 LIB =	"{SharedLibraries}InterfaceLib" ¶
 		"{SharedLibraries}StdCLib" ¶
@@ -40,7 +40,8 @@ LIB =	"{SharedLibraries}InterfaceLib" ¶
 		"{PPCLibraries}PPCToolLibs.o"
 
 # "-enum int -d STDC" are needed to make zlib build happily
-CFLAGS = -enum int -d STDC -d MAC_ENV -d DIRSEP=¶':¶' -i {PNGDIR},{ZLIBDIR} -w 2
+CFLAGS = -enum int -i {PNGDIR},{ZLIBDIR} -w 2 ¶
+	-d STDC -d MAC_ENV -d DEFAULT_VERBOSE=0 -d DIRSEP=¶':¶'
 
 .c.x  Ä  .c
 	{PPCC} {depDir}{default}.c -o {targDir}{default}.c.x {CFLAGS}

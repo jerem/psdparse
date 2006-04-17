@@ -1,0 +1,55 @@
+/*
+    This file is part of "psdparse"
+    Copyright (C) 2004-6 Toby Thain, toby@telegraphics.com.au
+
+    This program is free software; you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by  
+    the Free Software Foundation; either version 2 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License  
+    along with this program; if not, write to the Free Software
+    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+*/
+
+#include "winver.h"
+
+#include "version.h"
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION	VI_VERS_NUM
+ PRODUCTVERSION	VI_VERS_NUM
+ FILEFLAGSMASK	0x3fL
+ FILEFLAGS		VI_FLAGS
+ FILEOS			VOS__WINDOWS32
+ FILETYPE		VFT_DLL
+ FILESUBTYPE	VFT2_UNKNOWN
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "04090000"
+        BEGIN
+            VALUE "Comments",			VI_COMMENTS
+            VALUE "CompanyName",		"Telegraphics Pty Ltd, www.telegraphics.com.au\0"
+            VALUE "FileDescription",	"psd2png, Photoshop PSD file inspector and converter. Source code available at http://www.telegraphics.com.au/svn/psdparse/ (Subversion repository).\0"
+            VALUE "FileVersion",		VERSION_STR "\0"
+            VALUE "LegalCopyright",		"Copyright (C) 2004-6 Toby Thain\0"
+            VALUE "License",			"This program is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation; either version 2 of the License, or (at your option) any later version.\0"
+            /*VALUE "LegalTrademarks",	"\0"*/
+            VALUE "OriginalFilename",	"psd2png.exe\0"
+            /*VALUE "PrivateBuild",		"\0"*/
+            VALUE "ProductName",		"psd2png\0"
+            VALUE "ProductVersion",		VERSION_STR "\0"
+            /*VALUE "SpecialBuild",		"\0"*/
+        END
+    END
+    BLOCK "VarFileInfo" /* see http://msdn.microsoft.com/library/default.asp?url=/library/en-us/wcesdkr/html/_tools_VarFileInfo_Block.asp */
+    BEGIN
+        VALUE "Translation", 0x0809, 1200	/* UK English, Unicode */
+    END
+END
