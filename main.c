@@ -309,6 +309,7 @@ void dolayermaskinfo(FILE *f,struct psd_header *h){
 				linfo[i].right = get4B(f);
 				linfo[i].channels = get2B(f);
 
+				VERBOSE("\n");
 				UNQUIET("  layer %d: (%ld,%ld,%ld,%ld), %d channels (%ld rows x %ld cols)\n",
 						i, linfo[i].top, linfo[i].left, linfo[i].bottom, linfo[i].right, linfo[i].channels,
 						linfo[i].bottom-linfo[i].top, linfo[i].right-linfo[i].left);
@@ -326,7 +327,7 @@ void dolayermaskinfo(FILE *f,struct psd_header *h){
 				bm.flags = fgetc(f);
 				bm.filler = fgetc(f);
 				VERBOSE("  blending mode: sig='%c%c%c%c' key='%c%c%c%c' opacity=%d(%d%%) clipping=%d(%s)\n\
-                 flags=%#x(transp_prot%s visible%s bit4valid%s pixel_data_relevant%s)\n",
+    flags=%#x(transp_prot%s visible%s bit4valid%s pixel_data_relevant%s)\n",
 						bm.sig[0],bm.sig[1],bm.sig[2],bm.sig[3],
 						bm.key[0],bm.key[1],bm.key[2],bm.key[3],
 						bm.opacity,(bm.opacity*100+127)/255,
@@ -346,7 +347,7 @@ void dolayermaskinfo(FILE *f,struct psd_header *h){
 				lname[i] = checkmalloc(PAD4(1+namelen));
 				fread(lname[i],1,PAD4(1+namelen),f);
 				lname[i][namelen] = 0;
-				UNQUIET("  layer name: \"%s\"\n",lname[i]);
+				UNQUIET("    name: \"%s\"\n",lname[i]);
 		
 				fseek(f,extrastart+extralen,SEEK_SET); // skip over any extra data
 			}

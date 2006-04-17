@@ -126,9 +126,9 @@ FILE* pngsetupwrite(FILE *psd, char *dir, char *name, int width, int height,
 					n /= 3;
 					pngpal = checkmalloc(sizeof(png_color)*n);
 					for(i=0;i<n;++i){
-						pngpal[i].red		= palette[i];
+						pngpal[i].red   = palette[i];
 						pngpal[i].green = palette[i+n];
-						pngpal[i].blue	= palette[i+2*n];
+						pngpal[i].blue  = palette[i+2*n];
 					}
 					png_set_PLTE(png_ptr, info_ptr, pngpal, n);
 					free(pngpal);
