@@ -18,12 +18,13 @@ This software uses zlib which is (C) Jean-loup Gailly and Mark Adler.
 BUILDING
 
 Prerequisites:
-* zlib (often already installed on Linux or OS X)
-  Download via http://www.gzip.org/zlib/
-  Makefile statically links with v1.2.2. Extract alongside psdparse directory.
+* zlib (usually preinstalled on Linux or OS X)
+  Download via http://www.zlib.net/
+  Extract alongside psdparse directory, see Makefile
 * libpng
   Download via http://www.libpng.org/pub/png/libpng.html
-  Makefile statically links with v1.2.8. Extract alongside psdparse directory.
+  On OS X or Win32 (MinGW tools), Makefile statically links.
+  Extract alongside psdparse directory.
 
 If your system has these libraries as shared library packages,
 you can use those with appropriate changes to the Makefile.
@@ -52,18 +53,18 @@ you want to inspect:
 	./psdparse filename
 
 * For a guide to options, './psdparse --help'
-* For detailed output, use the -v option.
-* To extract PNG files of raster layers, use the -writepng option.
-* To specify a destination directory for PNGs, use the -pngdir=path option.
+* For detailed output, use the --verbose option.
+* To extract PNG files of raster layers, use the --writepng option.
+* To specify a destination directory for PNGs, use the --pngdir=path option.
   (By default, a directory is created next to the source file, with '_png' appended.)
 * To automatically create subdirectories when layer names include slashes,
-  use the -makedirs option. 
+  use the --makedirs option. 
   (e.g. "graphics/foo" will create "foo.png" in a subdirectory named "graphics").
   Without this option, slashes in filenames will be replaced by underscores (_).
   (N.B. In MPW, the directory separator is : instead of /.)
   Subdirectories may be arbitrarily deep.
 * To write a text file describing layers, sizes and positions (list.txt),
-  use option -writelist. This file is put in the same directory as PNGs.
+  use option --writelist. This file is put in the same directory as PNGs.
 
 LICENSE
 

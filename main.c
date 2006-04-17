@@ -485,7 +485,7 @@ int main(int argc,char *argv[]){
 			}
 
 			// file header
-			h.sig = get4B(f);
+			fread(h.sig,1,4,f);
 			h.version = get2B(f);
 			get4B(f); get2B(f); // reserved[6];
 			h.channels = get2B(f);
@@ -494,7 +494,7 @@ int main(int argc,char *argv[]){
 			h.depth = get2B(f);
 			h.mode = get2B(f);
 
-			if(!feof(f) && h.sig == '8BPS' && h.version == 1){
+			if(!feof(f) && !memcmp(h.sig,"8BPS",4) && h.version == 1){
 
 				UNQUIET("  channels = %d, rows = %ld, cols = %ld, depth = %d, mode = %d (%s)\n",
 						h.channels, h.rows, h.cols, h.depth,

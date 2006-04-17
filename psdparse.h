@@ -50,7 +50,7 @@ enum{RAWDATA,RLECOMP};
 #define UNQUIET if(!quiet) printf
 
 struct psd_header{
-	long sig;
+	char sig[4];
 	short version;
 	char reserved[6];
 	short channels;
