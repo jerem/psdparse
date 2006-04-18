@@ -25,6 +25,8 @@
 
 #include "psdparse.h"
 
+#include "png.h"
+
 enum{ 
 	CONTEXTROWS = 3, 
 	WARNLIMIT = 10
@@ -32,7 +34,7 @@ enum{
 
 #define DIRSUFFIX "_png"
 
-struct resdesc rdesc[] = {
+static struct resdesc rdesc[] = {
 	{1000,"PS2.0 mode data"},
 	{1001,"Macintosh print record"},
 	{1003,"PS2.0 indexed color table"},
@@ -93,16 +95,25 @@ char *mode_names[]={
 	"Duotone", "LabColor", "Gray16", "RGB48",
 	"Lab48", "CMYK64", "DeepMultichannel", "Duotone16"
 };
+char *channelsuffixes[]={
+	"", "", "", "RGB",
+	"CMYK", "HSL", "HSB", "",
+	"", "Lab", "", "RGB",
+	"Lab", "CMYK", "", ""
+};
 
-int verbose = DEFAULT_VERBOSE,mergedalpha = 0,quiet = 0,makedirs = 0,help = 0;
-char *pngdir = NULL,indir[PATH_MAX];
-FILE *listfile = NULL;
+char dirsep[]={DIRSEP,0};
+int verbose = DEFAULT_VERBOSE,quiet = 0,makedirs = 0;
+
+static int mergedalpha = 0,help = 0,splitchannels = 0;
+static char *pngdir = NULL,indir[PATH_MAX];
+static FILE *listfile = NULL;
 #ifdef ALWAYS_WRITE_PNG
 	// for the Windows console app, we want to be able to drag and drop a PSD
 	// giving us no way to specify a destination directory, so use a default
-	int writepng = 1,writelist = 1;
+	static int writepng = 1,writelist = 1;
 #else
-	int writepng = 0,writelist = 0;
+	static int writepng = 0,writelist = 0;
 #endif
 
 void fatal(char *s){ fputs(s,stderr); exit(EXIT_FAILURE); }
@@ -244,32 +255,120 @@ int dochannel(FILE *f,int channels,int rows,int cols,int depth,long **rowpos){
 
 #define BITSTR(f) ((f) ? "(1)" : "(0)")
 
+void writechannels(FILE *f, char *dir, char *name, int chcomp[], long **rowpos, 
+				   int startchan, int channels, int alphalast, int rows, int cols, struct psd_header *h){
+	char pngname[FILENAME_MAX];
+	int i,ch;
+	FILE *png;
+
+	for(i=startchan;i<channels;++i){
+		// build PNG file name
+		strcpy(pngname,name);
+		ch = i - !alphalast;
+		if(ch == -1)
+			strcat(pngname,".alpha");
+		else{
+			if(ch < strlen(channelsuffixes[h->mode]))
+				sprintf(pngname+strlen(pngname),".%c",channelsuffixes[h->mode][ch]);
+			else
+				sprintf(pngname+strlen(pngname),".%d",ch);
+		}
+			
+		if( (png = pngsetupwrite(f, dir, pngname, cols, rows, alphalast, PNG_COLOR_TYPE_GRAY, 0, h)) )
+			pngwriteimage(f,chcomp,rowpos,i,1,rows,cols,h->depth);
+	}
+}
+
 void doimage(FILE *f,char *indir,char *name,int merged,int channels,
 			 int rows,int cols,struct psd_header *h){
-	int ch,comp,*chcomp = checkmalloc(sizeof(int)*channels);
+	int ch,comp,startchan,color_type,*chcomp = checkmalloc(sizeof(int)*channels);
 	long **rowpos = checkmalloc(sizeof(long*)*channels);
 	FILE *png = NULL; /* handle to the output PNG file */
+
+	// mergedalpha==TRUE (negative layer count)
+	// indicates that the first alpha channel applies to the composite image.
+	// For instance, a spot channel should not
+	// be used as alpha for the merged image (I observed this problem).
+	int pngchan = channels - (merged && !mergedalpha && (channels==2 || channels==4));
 
 	for(ch=0;ch<channels;++ch) 
 		rowpos[ch] = checkmalloc(sizeof(long)*(rows+1));
 
-	if(writepng)
-		png = pngsetupwrite(f, pngdir ? pngdir : indir, name, 
-							cols, rows, channels, merged, h);
+	color_type = -1;
+	switch(h->mode){
+	case ModeBitmap:
+	case ModeGrayScale:
+	case ModeGray16:
+	case ModeDuotone:
+	case ModeDuotone16:
+		if     (pngchan == 1) color_type = PNG_COLOR_TYPE_GRAY;
+		else if(pngchan == 2) color_type = PNG_COLOR_TYPE_GRAY_ALPHA;
+		break;
+	case ModeIndexedColor:
+		if     (pngchan == 1) color_type = PNG_COLOR_TYPE_PALETTE;
+		break;
+	case ModeRGBColor:
+	case ModeRGB48:
+		if     (pngchan == 3) color_type = PNG_COLOR_TYPE_RGB;
+		else if(pngchan == 4) color_type = PNG_COLOR_TYPE_RGB_ALPHA;
+		break;
+	}
 
 	if(merged){
 		VERBOSE("  merged channels:\n");
+		
+		// The 'merged' or 'composite' image is where the flattened image is stored
+		// when 'Maximise Compatibility' is used.
+		// It consists of:
+		// - the alpha channel for merged image (if mergedalpha is TRUE)
+		// - the merged image (1 or 3 channels)
+		// - any remaining alpha or spot channels.
+		// For an identifiable image mode (Bitmap, GreyScale, Duotone, Indexed or RGB), 
+		// we should ideally 
+		// 1) write the first 1[2] or 3[4] channels in appropriate PNG format
+		// 2) write the remaining channels as extra GRAY PNG files.
+		// (For multichannel (and maybe other?) modes, we should just write all
+		// channels per step 2)
+		
 		comp = dochannel(f,channels,rows,cols,h->depth,rowpos);
 		for( ch=0 ; ch < channels ; ++ch ) 
 			chcomp[ch] = comp; /* for all merged channels have same compression type */
+		
+		if(writepng){
+			startchan = 0;
+			if(color_type != -1 && !splitchannels){
+				// recognisable PNG mode, so spit out the merged image
+				if( (png = pngsetupwrite(f, pngdir ? pngdir : indir, name, 
+										 cols, rows, channels, color_type, 0/*ARGB*/, h)) )
+					pngwriteimage(f,chcomp,rowpos,0,pngchan,rows,cols,h->depth);
+				startchan += pngchan;
+			}
+			if(channels>pngchan){
+				if(color_type == -1)
+					UNQUIET("# writing %s image as split channels...\n",mode_names[h->mode]);
+				writechannels(f, pngdir ? pngdir : indir, name, chcomp, rowpos, 
+							  startchan, channels-startchan, 1/*alphalast*/, rows, cols, h);
+			}
+		}
 	}else{
+		// Process layer:
+		// for each channel, store its row pointers sequentially 
+		// in the rowpos[] array, and its compression type in chcomp[] array
+		// (pngwriteimage() will take care of interleaving this data for libpng)
 		for( ch=0 ; ch < channels ; ++ch ){
 			VERBOSE("  channel %d:\n",ch);
 			chcomp[ch] = dochannel(f,1,rows,cols,h->depth,rowpos+ch);
 		}
+		if(color_type == -1){
+			UNQUIET("# writing layer as split channels...\n");
+			writechannels(f, pngdir ? pngdir : indir, name, chcomp, rowpos, 
+						  0, channels, 0/*alpha first*/, rows, cols, h);
+		}else{
+			if( (png = pngsetupwrite(f, pngdir ? pngdir : indir, name, 
+									 cols, rows, channels, color_type, 1/*RGBA*/, h)) )
+				pngwriteimage(f,chcomp,rowpos,0,channels,rows,cols,h->depth);
+		}
 	}
-
-	if(png) pngwriteimage(f,chcomp,rowpos,channels,rows,cols,h->depth);
 
 	for(ch=0;ch<channels;++ch) 
 		free(rowpos[ch]);
@@ -279,8 +378,7 @@ void doimage(FILE *f,char *indir,char *name,int merged,int channels,
 
 void dolayermaskinfo(FILE *f,struct psd_header *h){
 	long miscstart,misclen,layerlen,chlen,skip,extrastart,extralen;
-	short nlayers;
-	int i,j,chid,namelen;
+	int nlayers,i,j,chid,namelen;
 	struct layer_info *linfo;
 	char **lname;
 	struct blend_mode_info bm;
@@ -294,7 +392,7 @@ void dolayermaskinfo(FILE *f,struct psd_header *h){
 			nlayers = get2B(f);
 			if(nlayers<0){
 				nlayers = -nlayers;
-				VERBOSE("  (first alpha is transparency for merged image)");
+				VERBOSE("  (first alpha is transparency for merged image)\n");
 				mergedalpha = 1;
 			}
 			UNQUIET("  nlayers = %d\n",nlayers);
@@ -437,16 +535,18 @@ int main(int argc,char *argv[]){
 			{"writepng",no_argument,&writepng,1},
 			{"makedirs",no_argument,&makedirs,1},
 			{"writelist",no_argument,&writelist,1},
+			{"split",no_argument,&splitchannels,1},
 			{NULL,0,NULL,0}
 		};
 
-		switch(opt = getopt_long(argc,argv,"vqhd:wml",longopts,&indexptr)){
+		switch(opt = getopt_long(argc,argv,"vqd:wmlsh",longopts,&indexptr)){
 		case 'v': verbose = 1; break;
 		case 'q': quiet = 1; break;
 		case 'd': pngdir = optarg;
 		case 'w': writepng = 1; break;
 		case 'm': makedirs = 1; break;
 		case 'l': writelist = 1; break;
+		case 's': splitchannels = 1; break;
 		case 'h':
 		case '?': help = 1; break;
 		}
@@ -460,7 +560,8 @@ int main(int argc,char *argv[]){
   -w, --writepng     write PNG files of each raster layer (and merged composite)\n\
   -d, --pngdir dir   put PNGs in directory (implies --writepng)\n\
   -m, --makedirs     create subdirectory for PNG if layer name contains %c's\n\
-  -l, --writelist    write an 'asset list' of layer sizes and positions\n", argv[0],DIRSEP);
+  -l, --writelist    write an 'asset list' of layer sizes and positions\n\
+  -s, --split        write each composite channel to individual (grey scale) PNG\n", argv[0],DIRSEP);
 
 	for( i=optind ; i<argc ; ++i ){
 		if( (f = fopen(argv[i],"rb")) ){
@@ -474,7 +575,6 @@ int main(int argc,char *argv[]){
 
 			if(writelist){
 				char fname[FILENAME_MAX];
-				extern char dirsep[];
 
 				strcpy(fname,pngdir ? pngdir : indir);
 				MKDIR(fname,0755);
@@ -508,7 +608,6 @@ int main(int argc,char *argv[]){
 				// now process image data
 				base = strrchr(argv[i],DIRSEP);
 				doimage(f,indir,base ? base+1 : argv[i],1/*merged*/,h.channels,h.rows,h.cols,&h);
-				//dochannel(f,h.channels,h.rows,h.cols,h.depth,NULL);
 
 				UNQUIET("  done.\n");
 			}else

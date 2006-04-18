@@ -82,6 +82,9 @@ struct resdesc {
 	char *str;
 };
 
+extern char *mode_names[],dirsep[];
+extern int verbose,quiet,makedirs;
+
 void fatal(char *s);
 void warn(char *fmt,...);
 void *checkmalloc(long n);
@@ -98,9 +101,9 @@ long doirb(FILE *f);
 void doimageresources(FILE *f);
 
 FILE* pngsetupwrite(FILE *psd, char *dir, char *name, int width, int height, 
-					int channels, int merged,struct psd_header *h);
+					int channels, int color_type, int alphalast, struct psd_header *h);
 void pngwriteimage(FILE *psd, int comp[], long **rowpos,
-				   int channels,int rows,int cols,int depth);
+				   int startchan, int pngchan, int rows, int cols, int depth);
 
 int unpackbits(unsigned char *outp,unsigned char *inp,int rowbytes,int inlen);
 

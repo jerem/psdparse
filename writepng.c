@@ -23,23 +23,17 @@
 #include "psdparse.h"
 #include "png.h"
 
-png_structp png_ptr;
-png_infop info_ptr;
-
-extern char *mode_names[];
-extern int verbose,quiet;
-char dirsep[]={DIRSEP,0};
+static png_structp png_ptr;
+static png_infop info_ptr;
 
 FILE* pngsetupwrite(FILE *psd, char *dir, char *name, int width, int height, 
-					int channels, int merged, struct psd_header *h){
+					int channels, int color_type, int alphalast, struct psd_header *h){
 	char pngname[PATH_MAX],*last,d[PATH_MAX],*pngtype = NULL;
 	static FILE *f; // static, because it might get used post-longjmp()
 	unsigned char *palette;
 	png_color *pngpal;
 	int i,n;
-	volatile int color_type = -1; // volatile, prevents compiler warning :)
 	long savepos;
-	extern int makedirs;
 
 	f = NULL;
 	if(width && height){
@@ -66,27 +60,16 @@ FILE* pngsetupwrite(FILE *psd, char *dir, char *name, int width, int height,
 		strcat(pngname,name);
 		strcat(pngname,".png");
 
-		switch(h->mode){ // FIXME: should try to do something useful for other modes like Multichannel too
-		case ModeBitmap:
-		case ModeGrayScale:
-		case ModeGray16:
-		case ModeDuotone:
-		case ModeDuotone16:
-			if     (channels == 1){ color_type = PNG_COLOR_TYPE_GRAY;       pngtype="GRAY"; }
-			else if(channels == 2){ color_type = PNG_COLOR_TYPE_GRAY_ALPHA; pngtype="GRAY_ALPHA"; }
-			break;
-		case ModeIndexedColor:
-			if     (channels == 1){ color_type = PNG_COLOR_TYPE_PALETTE;    pngtype="PALETTE"; }
-			break;
-		case ModeRGBColor:
-		case ModeRGB48:
-			if     (channels == 3){ color_type = PNG_COLOR_TYPE_RGB;        pngtype="RGB"; }
-			else if(channels == 4){ color_type = PNG_COLOR_TYPE_RGB_ALPHA;  pngtype="RGB_ALPHA"; }
-			break;
+		switch(color_type){
+		case PNG_COLOR_TYPE_GRAY:       pngtype="GRAY"; break;
+		case PNG_COLOR_TYPE_GRAY_ALPHA: pngtype="GRAY_ALPHA"; break;
+		case PNG_COLOR_TYPE_PALETTE:    pngtype="PALETTE"; break;
+		case PNG_COLOR_TYPE_RGB:        pngtype="RGB"; break;
+		case PNG_COLOR_TYPE_RGB_ALPHA:  pngtype="RGB_ALPHA"; break;
 		}
 		if(color_type == -1){
 			fprintf(stderr,"## don't know how to write PNG of %d channels (%s)\n", 
-				channels, mode_names[h->mode]);
+					channels, mode_names[h->mode]);
 			return NULL;
 		}else
 		{
@@ -136,30 +119,31 @@ FILE* pngsetupwrite(FILE *psd, char *dir, char *name, int width, int height,
 				}
 
 				png_write_info(png_ptr, info_ptr);
+				
+				png_set_compression_level(png_ptr,Z_BEST_COMPRESSION);
 
-				// png_set_invert_alpha(png_ptr);
 				/* swap location of alpha bytes from ARGB to RGBA */
-				if(!merged) png_set_swap_alpha(png_ptr);
+				if(alphalast) png_set_swap_alpha(png_ptr);
 
-			}else fprintf(stderr,"# problem opening \"%s\" for writing\n",pngname);
+			}else fprintf(stderr,"### can't open \"%s\" for writing\n",pngname);
 		}
 	}else fprintf(stderr,"### skipping layer \"%s\" (%dx%d)\n",name,width,height);
 
 	return f;
 }
 
-void pngwriteimage(FILE *psd, int comp[], long **rowpos, 
-				   int channels, int rows, int cols, int depth){
+void pngwriteimage(FILE *psd, int comp[], long **rowpos,
+				   int startchan, int pngchan, int rows, int cols, int depth){
 	int i,j,ch;
 	unsigned n,rb = (depth*cols+7)/8;
 	unsigned char *rowbuf,*inrows[4],*rledata,*p;
 	short *q;
 	long savepos = ftell(psd);
 
-	rowbuf = checkmalloc(rb*channels);
+	rowbuf = checkmalloc(rb*pngchan);
 	rledata = checkmalloc(2*rb);
 
-	for(ch=0;ch<channels;++ch){
+	for(ch=0;ch<pngchan;++ch){
 		inrows[ch] = checkmalloc(rb);
 		//printf("[%d] inrows=%#x rowpos=%#x\n",ch,inrows[ch],rowpos[ch]);
 	}
@@ -171,7 +155,7 @@ void pngwriteimage(FILE *psd, int comp[], long **rowpos,
 done:	/* put cleanup code here, so that we are sure to do it in case of a PNG error */
 		free(rowbuf);
 		free(rledata);
-		for(ch=0;ch<channels;++ch)
+		for(ch=0;ch<pngchan;++ch)
 			free(inrows[ch]);
 	
 		fseek(psd,savepos,SEEK_SET);
@@ -181,42 +165,43 @@ done:	/* put cleanup code here, so that we are sure to do it in case of a PNG er
 	}
 
 	for(j=0;j<rows;++j){
-		for(ch=0;ch<channels;++ch){
+		for(i=0;i<pngchan;++i){
+			ch = startchan+i;
 			/* get row data */
 			//printf("rowpos[%d][%4d] = %7d\n",ch,j,rowpos[ch][j]);
 
 			if(fseek(psd,rowpos[ch][j],SEEK_SET) == -1){
 				fprintf(stderr,"# error seeking to %ld\n",rowpos[ch][j]);
-				memset(inrows[ch],0,rb);
+				memset(inrows[i],0,rb);
 			}else{
 
 				if(comp[ch] == RAWDATA){ /* uncompressed row */
-					n = fread(inrows[ch],1,rb,psd);
+					n = fread(inrows[i],1,rb,psd);
 					if(n != rb){
 						fprintf(stderr,"# error reading row data (raw) @ %ld\n",rowpos[ch][j]);
-						memset(inrows[ch]+n,0,rb-n);
+						memset(inrows[i]+n,0,rb-n);
 					}
 				}
 				else{ /* RLE compressed row */
-					n = rowpos[ch][j+1]-rowpos[ch][j];
+					n = rowpos[ch][j+1] - rowpos[ch][j];
 					if(fread(rledata,1,n,psd) != n){
 						fprintf(stderr,"# error reading row data (RLE) @ %ld\n",rowpos[ch][j]);
-						memset(inrows[ch],0,rb);
+						memset(inrows[i],0,rb);
 					}else
-						unpackbits(inrows[ch],rledata,rb,n);
+						unpackbits(inrows[i],rledata,rb,n);
 				}
 
 			}
 		}
 
-		if(ch>1){ /* interleave channels */
+		if(pngchan>1){ /* interleave channels */
 			if(depth == 8)
 				for(i=0,p = rowbuf;i<cols;++i)
-					for(ch=0;ch<channels;++ch)
+					for(ch=0;ch<pngchan;++ch)
 						*p++ = inrows[ch][i];
 			else
 				for(i=0,q = (short*)rowbuf;i<cols;++i)
-					for(ch=0;ch<channels;++ch)
+					for(ch=0;ch<pngchan;++ch)
 						*q++ = ((short*)inrows[ch])[i];
 		}else 
 			memcpy(rowbuf,inrows[0],rb);
