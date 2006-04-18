@@ -267,14 +267,12 @@ void writechannels(FILE *f, char *dir, char *name, int chcomp[], long **rowpos,
 		ch = i - !alphalast;
 		if(ch == -1)
 			strcat(pngname,".alpha");
-		else{
-			if(ch < strlen(channelsuffixes[h->mode]))
-				sprintf(pngname+strlen(pngname),".%c",channelsuffixes[h->mode][ch]);
-			else
-				sprintf(pngname+strlen(pngname),".%d",ch);
-		}
+		else if(ch < strlen(channelsuffixes[h->mode]))
+			sprintf(pngname+strlen(pngname),".%c",channelsuffixes[h->mode][ch]);
+		else
+			sprintf(pngname+strlen(pngname),".%d",ch);
 			
-		if( (png = pngsetupwrite(f, dir, pngname, cols, rows, alphalast, PNG_COLOR_TYPE_GRAY, 0, h)) )
+		if( (png = pngsetupwrite(f,dir,pngname,cols,rows,0,PNG_COLOR_TYPE_GRAY,0,h)) )
 			pngwriteimage(f,chcomp,rowpos,i,1,rows,cols,h->depth);
 	}
 }
@@ -287,8 +285,7 @@ void doimage(FILE *f,char *indir,char *name,int merged,int channels,
 
 	// mergedalpha==TRUE (negative layer count)
 	// indicates that the first alpha channel applies to the composite image.
-	// For instance, a spot channel should not
-	// be used as alpha for the merged image (I observed this problem).
+	// For instance, a spot channel should not become alpha for the merged image.
 	int pngchan = channels - (merged && !mergedalpha && (channels==2 || channels==4));
 
 	for(ch=0;ch<channels;++ch) 
@@ -343,7 +340,7 @@ void doimage(FILE *f,char *indir,char *name,int merged,int channels,
 					pngwriteimage(f,chcomp,rowpos,0,pngchan,rows,cols,h->depth);
 				startchan += pngchan;
 			}
-			if(channels>pngchan){
+			if(startchan<channels){
 				if(color_type == -1)
 					UNQUIET("# writing %s image as split channels...\n",mode_names[h->mode]);
 				writechannels(f, pngdir ? pngdir : indir, name, chcomp, rowpos, 
@@ -359,14 +356,16 @@ void doimage(FILE *f,char *indir,char *name,int merged,int channels,
 			VERBOSE("  channel %d:\n",ch);
 			chcomp[ch] = dochannel(f,1,rows,cols,h->depth,rowpos+ch);
 		}
-		if(color_type == -1){
-			UNQUIET("# writing layer as split channels...\n");
-			writechannels(f, pngdir ? pngdir : indir, name, chcomp, rowpos, 
-						  0, channels, 0/*alpha first*/, rows, cols, h);
-		}else{
-			if( (png = pngsetupwrite(f, pngdir ? pngdir : indir, name, 
-									 cols, rows, channels, color_type, 1/*RGBA*/, h)) )
-				pngwriteimage(f,chcomp,rowpos,0,channels,rows,cols,h->depth);
+		if(writepng){
+			if(color_type == -1){
+				UNQUIET("# writing layer as split channels...\n");
+				writechannels(f, pngdir ? pngdir : indir, name, chcomp, rowpos, 
+							  0, channels, 0/*alpha first*/, rows, cols, h);
+			}else{
+				if( (png = pngsetupwrite(f, pngdir ? pngdir : indir, name, 
+										 cols, rows, channels, color_type, 1/*RGBA*/, h)) )
+					pngwriteimage(f,chcomp,rowpos,0,channels,rows,cols,h->depth);
+			}
 		}
 	}
 
