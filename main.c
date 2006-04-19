@@ -193,7 +193,7 @@ int dochannel(FILE *f,int channels,int rows,int cols,int depth,long **rowpos){
 		/* accumulate RLE counts, to make array of row start positions */
 		for(ch=k=0;ch<channels;++ch){
 			for(j=0;j<rows && !feof(f);++j,++k){
-				rlebuf[k] = get2B(f);
+				rlebuf[k] = (unsigned short)get2B(f);
 				//printf("rowpos[%d][%3d]=%6d\n",ch,j,pos);
 				if(rowpos) rowpos[ch][j] = pos;
 				pos += rlebuf[k];
@@ -226,12 +226,19 @@ int dochannel(FILE *f,int channels,int rows,int cols,int depth,long **rowpos){
 
 			if(comp == RLECOMP){
 				n = rlebuf[k++];
+				if(n>2*rb){
+					warn("bad RLE count @ row %d",j);
+					n = 2*rb;
+				}
 				if(fread(rowbuf,1,n,f) == n){
 					if(dumpit){
 						VERBOSE("    %4d: <%4d> ",j,n);
 						dumprow(rowbuf,n);
 					}
-				}else fatal("# couldn't read RLE row!\n");
+				}else{
+					memset(rowbuf,0,n);
+					warn("couldn't read RLE row!");
+				}
 			}
 			else if(comp == RAWDATA){
 				if(fread(rowbuf,1,rb,f) == rb){
@@ -239,7 +246,10 @@ int dochannel(FILE *f,int channels,int rows,int cols,int depth,long **rowpos){
 						VERBOSE("    %4d: ",j);
 						dumprow(rowbuf,rb);
 					}
-				}else fatal("# couldn't read raw row!\n");
+				}else{
+					memset(rowbuf,0,rb);
+					warn("couldn't read raw row!");
+				}
 			}
 
 		}

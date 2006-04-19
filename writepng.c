@@ -184,6 +184,7 @@ done:	/* put cleanup code here, so that we are sure to do it in case of a PNG er
 				}
 				else{ /* RLE compressed row */
 					n = rowpos[ch][j+1] - rowpos[ch][j];
+					if(n>2*rb) n = 2*rb; // sanity check
 					if(fread(rledata,1,n,psd) != n){
 						fprintf(stderr,"# error reading row data (RLE) @ %ld\n",rowpos[ch][j]);
 						memset(inrows[i],0,rb);
