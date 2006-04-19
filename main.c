@@ -261,10 +261,10 @@ void writechannels(FILE *f, char *dir, char *name, int chcomp[], long **rowpos,
 	int i,ch;
 	FILE *png;
 
-	for(i=startchan;i<channels;++i){
+	for(i=0;i<channels;++i){
 		// build PNG file name
 		strcpy(pngname,name);
-		ch = i - !alphalast;
+		ch = startchan + i - !alphalast;
 		if(ch == -1)
 			strcat(pngname,".alpha");
 		else if(ch < strlen(channelsuffixes[h->mode]))
@@ -273,41 +273,50 @@ void writechannels(FILE *f, char *dir, char *name, int chcomp[], long **rowpos,
 			sprintf(pngname+strlen(pngname),".%d",ch);
 			
 		if( (png = pngsetupwrite(f,dir,pngname,cols,rows,0,PNG_COLOR_TYPE_GRAY,0,h)) )
-			pngwriteimage(f,chcomp,rowpos,i,1,rows,cols,h->depth);
+			pngwriteimage(f,chcomp,rowpos,startchan+i,1,rows,cols,h->depth);
 	}
 }
 
 void doimage(FILE *f,char *indir,char *name,int merged,int channels,
 			 int rows,int cols,struct psd_header *h){
-	int ch,comp,startchan,color_type,*chcomp = checkmalloc(sizeof(int)*channels);
+	int ch,comp,startchan,pngchan,color_type,
+		*chcomp = checkmalloc(sizeof(int)*channels);
 	long **rowpos = checkmalloc(sizeof(long*)*channels);
 	FILE *png = NULL; /* handle to the output PNG file */
-
-	// mergedalpha==TRUE (negative layer count)
-	// indicates that the first alpha channel applies to the composite image.
-	// For instance, a spot channel should not become alpha for the merged image.
-	int pngchan = channels - (merged && !mergedalpha && (channels==2 || channels==4));
 
 	for(ch=0;ch<channels;++ch) 
 		rowpos[ch] = checkmalloc(sizeof(long)*(rows+1));
 
-	color_type = -1;
+	pngchan = color_type = 0;
 	switch(h->mode){
 	case ModeBitmap:
 	case ModeGrayScale:
 	case ModeGray16:
 	case ModeDuotone:
 	case ModeDuotone16:
-		if     (pngchan == 1) color_type = PNG_COLOR_TYPE_GRAY;
-		else if(pngchan == 2) color_type = PNG_COLOR_TYPE_GRAY_ALPHA;
+		if(channels == 1 || (merged && !mergedalpha)){
+			color_type = PNG_COLOR_TYPE_GRAY;
+			pngchan = 1;
+		}
+		else if(channels >= 2){
+			color_type = PNG_COLOR_TYPE_GRAY_ALPHA;
+			pngchan = 2;
+		}
 		break;
 	case ModeIndexedColor:
-		if     (pngchan == 1) color_type = PNG_COLOR_TYPE_PALETTE;
+		color_type = PNG_COLOR_TYPE_PALETTE;
+		pngchan = 1;
 		break;
 	case ModeRGBColor:
 	case ModeRGB48:
-		if     (pngchan == 3) color_type = PNG_COLOR_TYPE_RGB;
-		else if(pngchan == 4) color_type = PNG_COLOR_TYPE_RGB_ALPHA;
+		if(channels == 3 || (merged && !mergedalpha)){
+			color_type = PNG_COLOR_TYPE_RGB;
+			pngchan = 3;
+		}
+		else if(channels >= 4){
+			color_type = PNG_COLOR_TYPE_RGB_ALPHA;
+			pngchan = 4;
+		}
 		break;
 	}
 
@@ -333,15 +342,15 @@ void doimage(FILE *f,char *indir,char *name,int merged,int channels,
 		
 		if(writepng){
 			startchan = 0;
-			if(color_type != -1 && !splitchannels){
+			if(pngchan && !splitchannels){
 				// recognisable PNG mode, so spit out the merged image
 				if( (png = pngsetupwrite(f, pngdir ? pngdir : indir, name, 
-										 cols, rows, channels, color_type, 0/*ARGB*/, h)) )
+										 cols, rows, pngchan, color_type, 0/*ARGB*/, h)) )
 					pngwriteimage(f,chcomp,rowpos,0,pngchan,rows,cols,h->depth);
 				startchan += pngchan;
 			}
 			if(startchan<channels){
-				if(color_type == -1)
+				if(!pngchan)
 					UNQUIET("# writing %s image as split channels...\n",mode_names[h->mode]);
 				writechannels(f, pngdir ? pngdir : indir, name, chcomp, rowpos, 
 							  startchan, channels-startchan, 1/*alphalast*/, rows, cols, h);
@@ -357,14 +366,14 @@ void doimage(FILE *f,char *indir,char *name,int merged,int channels,
 			chcomp[ch] = dochannel(f,1,rows,cols,h->depth,rowpos+ch);
 		}
 		if(writepng){
-			if(color_type == -1){
-				UNQUIET("# writing layer as split channels...\n");
-				writechannels(f, pngdir ? pngdir : indir, name, chcomp, rowpos, 
-							  0, channels, 0/*alpha first*/, rows, cols, h);
-			}else{
+			if(pngchan){
 				if( (png = pngsetupwrite(f, pngdir ? pngdir : indir, name, 
 										 cols, rows, channels, color_type, 1/*RGBA*/, h)) )
 					pngwriteimage(f,chcomp,rowpos,0,channels,rows,cols,h->depth);
+			}else{
+				UNQUIET("# writing layer as split channels...\n");
+				writechannels(f, pngdir ? pngdir : indir, name, chcomp, rowpos, 
+							  0, channels, 0/*alpha first*/, rows, cols, h);
 			}
 		}
 	}
