@@ -432,7 +432,7 @@ void dolayermaskinfo(FILE *f,struct psd_header *h){
 				for( j=0 ; j < linfo[i].channels ; ++j ){
 					chid = get2B(f);
 					chlen = get4B(f);
-					VERBOSE("    channel %2d: id=%2d, %5ld bytes\n",j,chid,chlen);
+					VERBOSE("    channel %2d: id=%2d,%7ld bytes\n",j,chid,chlen);
 				}
 
 				fread(bm.sig,1,4,f);
