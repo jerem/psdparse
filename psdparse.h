@@ -93,7 +93,7 @@ short get2B(FILE *f);
 void skipblock(FILE *f,char *desc);
 void dumprow(unsigned char *b,int n);
 int dochannel(FILE *f,int channels,int rows,int cols,int depth,long **rowpos);
-void doimage(FILE *f,char *indir,char *name,int merged,int channels,
+void doimage(FILE *f,char *name,int merged,int channels,
 						 int rows,int cols,struct psd_header *h);
 void dolayermaskinfo(FILE *f,struct psd_header *h);
 char *finddesc(int id);

@@ -106,7 +106,7 @@ char dirsep[]={DIRSEP,0};
 int verbose = DEFAULT_VERBOSE,quiet = 0,makedirs = 0;
 
 static int mergedalpha = 0,help = 0,splitchannels = 0;
-static char *pngdir = NULL,indir[PATH_MAX];
+static char indir[PATH_MAX],*pngdir = indir;
 static FILE *listfile = NULL;
 #ifdef ALWAYS_WRITE_PNG
 	// for the Windows console app, we want to be able to drag and drop a PSD
@@ -177,11 +177,12 @@ int dochannel(FILE *f,int channels,int rows,int cols,int depth,long **rowpos){
 	static char *comptype[] = {"raw","RLE"};
 
 	unsigned comp = get2B(f);
-	if(comp>RLECOMP) fatal("# bad compression type\n");
-	VERBOSE("    compression = %d (%s)\n",comp,comptype[comp]);
+	if(comp>RLECOMP)
+		fatal("# bad compression value\n");
+	VERBOSE("  compression = %d (%s)\n",comp,comptype[comp]);
 
 	rb = (cols*depth + 7)/8;
-	VERBOSE("    uncompressed size %ld bytes (row bytes = %d)\n",(long)channels*rows*rb,rb);
+	VERBOSE("  uncompressed size %ld bytes (row bytes = %d)\n",(long)channels*rows*rb,rb);
 
 	rowbuf = checkmalloc(rb*2); /* slop for worst case RLE overhead (usually (rb/127+1) ) */
 	pos = ftell(f);
@@ -254,7 +255,7 @@ int dochannel(FILE *f,int channels,int rows,int cols,int depth,long **rowpos){
 		}
 
 	}
-	//VERBOSE("\n");
+	VERBOSE("\n");
 
 	if(comp == RLECOMP) free(rlebuf);
 	free(rowbuf);
@@ -286,7 +287,7 @@ void writechannels(FILE *f, char *dir, char *name, int chcomp[], long **rowpos,
 	}
 }
 
-void doimage(FILE *f,char *indir,char *name,int merged,int channels,
+void doimage(FILE *f,char *name,int merged,int channels,
 			 int rows,int cols,struct psd_header *h){
 	int ch,comp,startchan,pngchan,color_type,
 		*chcomp = checkmalloc(sizeof(int)*channels);
@@ -330,7 +331,7 @@ void doimage(FILE *f,char *indir,char *name,int merged,int channels,
 	}
 
 	if(merged){
-		VERBOSE("\n  merged channels:\n");
+		VERBOSE("  merged channels:\n");
 		
 		// The 'merged' or 'composite' image is where the flattened image is stored
 		// when 'Maximise Compatibility' is used.
@@ -353,7 +354,7 @@ void doimage(FILE *f,char *indir,char *name,int merged,int channels,
 			startchan = 0;
 			if(pngchan && !splitchannels){
 				// recognisable PNG mode, so spit out the merged image
-				if( (png = pngsetupwrite(f, pngdir ? pngdir : indir, name, 
+				if( (png = pngsetupwrite(f, pngdir, name, 
 										 cols, rows, pngchan, color_type, 0/*ARGB*/, h)) )
 					pngwriteimage(f,chcomp,rowpos,0,pngchan,rows,cols,h->depth);
 				startchan += pngchan;
@@ -361,7 +362,7 @@ void doimage(FILE *f,char *indir,char *name,int merged,int channels,
 			if(startchan<channels){
 				if(!pngchan)
 					UNQUIET("# writing %s image as split channels...\n",mode_names[h->mode]);
-				writechannels(f, pngdir ? pngdir : indir, name, chcomp, rowpos, 
+				writechannels(f, pngdir, name, chcomp, rowpos, 
 							  startchan, channels-startchan, 1/*alphalast*/, rows, cols, h);
 			}
 		}
@@ -376,12 +377,12 @@ void doimage(FILE *f,char *indir,char *name,int merged,int channels,
 		}
 		if(writepng){
 			if(pngchan){
-				if( (png = pngsetupwrite(f, pngdir ? pngdir : indir, name, 
+				if( (png = pngsetupwrite(f, pngdir, name, 
 										 cols, rows, channels, color_type, 1/*RGBA*/, h)) )
 					pngwriteimage(f,chcomp,rowpos,0,channels,rows,cols,h->depth);
 			}else{
 				UNQUIET("# writing layer as split channels...\n");
-				writechannels(f, pngdir ? pngdir : indir, name, chcomp, rowpos, 
+				writechannels(f, pngdir, name, chcomp, rowpos, 
 							  0, channels, 0/*alpha first*/, rows, cols, h);
 			}
 		}
@@ -412,7 +413,7 @@ void dolayermaskinfo(FILE *f,struct psd_header *h){
 				VERBOSE("  (first alpha is transparency for merged image)\n");
 				mergedalpha = 1;
 			}
-			UNQUIET("  nlayers = %d\n",nlayers);
+			UNQUIET("\n  layer info for %d layers:\n",nlayers);
 			linfo = checkmalloc(nlayers*sizeof(struct layer_info));
 			lname = checkmalloc(nlayers*sizeof(char*));
 
@@ -432,7 +433,7 @@ void dolayermaskinfo(FILE *f,struct psd_header *h){
 				for( j=0 ; j < linfo[i].channels ; ++j ){
 					chid = get2B(f);
 					chlen = get4B(f);
-					VERBOSE("    channel %2d: id=%2d,%7ld bytes\n",j,chid,chlen);
+					VERBOSE("    channel %2d: id=%2d, %5ld bytes\n",j,chid,chlen);
 				}
 
 				fread(bm.sig,1,4,f);
@@ -472,13 +473,13 @@ void dolayermaskinfo(FILE *f,struct psd_header *h){
 			for(i=0;i<nlayers;++i){
 				long pixw = linfo[i].right-linfo[i].left,
 					 pixh = linfo[i].bottom-linfo[i].top;
-				VERBOSE("\n  layer %d (\"%s\"):\n",i,lname[i]);
+				VERBOSE("  layer %d (\"%s\"):\n",i,lname[i]);
 			  
 				if(listfile && pixw && pixh)
 					fprintf(listfile,"\t\"%s\" = { pos={%3ld,%3ld}, size={%3ld,%3ld} },\n",
 							lname[i], linfo[i].left, linfo[i].top, pixw, pixh);
 		
-				doimage(f, indir, lname[i], 0/*not merged*/, linfo[i].channels, 
+				doimage(f, lname[i], 0/*not merged*/, linfo[i].channels, 
 						pixh, pixw, h);
 			}
 
@@ -593,12 +594,12 @@ int main(int argc,char *argv[]){
 			if(writelist){
 				char fname[FILENAME_MAX];
 
-				strcpy(fname,pngdir ? pngdir : indir);
+				strcpy(fname,pngdir);
 				MKDIR(fname,0755);
 				strcat(fname,dirsep);
 				strcat(fname,"list.txt");
 				if( (listfile = fopen(fname,"w")) )
-					fprintf(listfile,"-- source file: %s\n",argv[i]);
+					fprintf(listfile,"-- PSD file: %s\n",argv[i]);
 			}
 
 			// file header
@@ -624,9 +625,9 @@ int main(int argc,char *argv[]){
 
 				// now process image data
 				base = strrchr(argv[i],DIRSEP);
-				doimage(f,indir,base ? base+1 : argv[i],1/*merged*/,h.channels,h.rows,h.cols,&h);
+				doimage(f,base ? base+1 : argv[i],1/*merged*/,h.channels,h.rows,h.cols,&h);
 
-				UNQUIET("  done.\n\n");
+				UNQUIET("  done.\n");
 			}else
 				fprintf(stderr,"# \"%s\": couldn't read header, is not a PSD, or version is not 1!\n",argv[i]);
 
