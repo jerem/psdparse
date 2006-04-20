@@ -177,12 +177,11 @@ int dochannel(FILE *f,int channels,int rows,int cols,int depth,long **rowpos){
 	static char *comptype[] = {"raw","RLE"};
 
 	unsigned comp = get2B(f);
-	if(comp>RLECOMP)
-		fatal("# bad compression value\n");
-	VERBOSE("  compression = %d (%s)\n",comp,comptype[comp]);
+	if(comp>RLECOMP) fatal("# bad compression type\n");
+	VERBOSE("    compression = %d (%s)\n",comp,comptype[comp]);
 
 	rb = (cols*depth + 7)/8;
-	VERBOSE("  uncompressed size %ld bytes (row bytes = %d)\n",(long)channels*rows*rb,rb);
+	VERBOSE("    uncompressed size %ld bytes (row bytes = %d)\n",(long)channels*rows*rb,rb);
 
 	rowbuf = checkmalloc(rb*2); /* slop for worst case RLE overhead (usually (rb/127+1) ) */
 	pos = ftell(f);
@@ -255,7 +254,6 @@ int dochannel(FILE *f,int channels,int rows,int cols,int depth,long **rowpos){
 		}
 
 	}
-	VERBOSE("\n");
 
 	if(comp == RLECOMP) free(rlebuf);
 	free(rowbuf);
@@ -331,7 +329,7 @@ void doimage(FILE *f,char *name,int merged,int channels,
 	}
 
 	if(merged){
-		VERBOSE("  merged channels:\n");
+		VERBOSE("\n  merged channels:\n");
 		
 		// The 'merged' or 'composite' image is where the flattened image is stored
 		// when 'Maximise Compatibility' is used.
@@ -473,7 +471,7 @@ void dolayermaskinfo(FILE *f,struct psd_header *h){
 			for(i=0;i<nlayers;++i){
 				long pixw = linfo[i].right-linfo[i].left,
 					 pixh = linfo[i].bottom-linfo[i].top;
-				VERBOSE("  layer %d (\"%s\"):\n",i,lname[i]);
+				VERBOSE("\n  layer %d (\"%s\"):\n",i,lname[i]);
 			  
 				if(listfile && pixw && pixh)
 					fprintf(listfile,"\t\"%s\" = { pos={%3ld,%3ld}, size={%3ld,%3ld} },\n",
@@ -627,7 +625,7 @@ int main(int argc,char *argv[]){
 				base = strrchr(argv[i],DIRSEP);
 				doimage(f,base ? base+1 : argv[i],1/*merged*/,h.channels,h.rows,h.cols,&h);
 
-				UNQUIET("  done.\n");
+				UNQUIET("  done.\n\n");
 			}else
 				fprintf(stderr,"# \"%s\": couldn't read header, is not a PSD, or version is not 1!\n",argv[i]);
 
