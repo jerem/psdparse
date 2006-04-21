@@ -543,15 +543,15 @@ int main(int argc,char *argv[]){
 	char *base,*ext;
 
 	do{
-		static struct option longopts[]={
-			{"verbose",no_argument,&verbose,1},
-			{"quiet",no_argument,&quiet,1},
-			{"help",no_argument,&help,1},
-			{"pngdir",required_argument,NULL,'d'},
-			{"writepng",no_argument,&writepng,1},
-			{"makedirs",no_argument,&makedirs,1},
-			{"writelist",no_argument,&writelist,1},
-			{"split",no_argument,&splitchannels,1},
+		static struct option longopts[] = {
+			{"verbose",  no_argument, &verbose, 1},
+			{"quiet",    no_argument, &quiet, 1},
+			{"help",     no_argument, &help, 1},
+			{"pngdir",   required_argument, NULL, 'd'},
+			{"writepng", no_argument, &writepng, 1},
+			{"makedirs", no_argument, &makedirs, 1},
+			{"list",     no_argument, &writelist, 1},
+			{"split",    no_argument, &splitchannels, 1},
 			{NULL,0,NULL,0}
 		};
 
@@ -576,7 +576,7 @@ int main(int argc,char *argv[]){
   -w, --writepng     write PNG files of each raster layer (and merged composite)\n\
   -d, --pngdir dir   put PNGs in directory (implies --writepng)\n\
   -m, --makedirs     create subdirectory for PNG if layer name contains %c's\n\
-  -l, --writelist    write an 'asset list' of layer sizes and positions\n\
+  -l, --list         write an 'asset list' of layer sizes and positions\n\
   -s, --split        write each composite channel to individual (grey scale) PNG\n", argv[0],DIRSEP);
 
 	for( i=optind ; i<argc ; ++i ){

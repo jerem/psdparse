@@ -65,7 +65,10 @@ you want to inspect:
   (N.B. In MPW, the directory separator is : instead of /.)
   Subdirectories may be arbitrarily deep.
 * To write a text file describing layers, sizes and positions (list.txt),
-  use option --writelist. This file is put in the same directory as PNGs.
+  use option --list. This file is put in the same directory as PNGs.
+* Normally, RGB images (and grey scale+alpha images) are written as composite
+  PNG with channels combined in one file. To write individual PNG files
+  for each channel, regardless of mode, use the --split option.
 
 LICENSE
 

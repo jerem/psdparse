@@ -38,19 +38,20 @@ PNGDIRW32  = ../libpng-1.2.8_w32
 # (zlib can be downloaded via http://www.zlib.net/)
 
 # define MinGW tools
-MINGW_CC     = i386-mingw32msvc-gcc
-MINGW_AR     = i386-mingw32msvc-ar 
-MINGW_RANLIB = i386-mingw32msvc-ranlib
+MINGW_CC      = i386-mingw32msvc-gcc
+MINGW_AR      = i386-mingw32msvc-ar
+MINGW_RANLIB  = i386-mingw32msvc-ranlib
+MINGW_WINDRES = i386-mingw32msvc-windres
 
 CFLAGS   += -W -Wall -O2
 CPPFLAGS += -DDEFAULT_VERBOSE=0
 
 SRC    = main.c writepng.c unpackbits.c
 OBJ    = $(patsubst %.c, obj/%.o, $(SRC) )
-OBJW32 = $(patsubst %.c, obj_w32/%.o, $(SRC) )
+OBJW32 = $(patsubst %.c, obj_w32/%.o, $(SRC) ) obj_w32/res.o
 
 obj/%.o     : %.c ; $(CC)       -o $@ -c $< $(CFLAGS) $(CPPFLAGS)
-obj_w32/%.o : %.c ; $(MINGW_CC) -o $@ -c $< $(CFLAGS) $(CPPFLAGS) 
+obj_w32/%.o : %.c ; $(MINGW_CC) -o $@ -c $< $(CFLAGS) $(CPPFLAGS)
 
 all : psdparse
 clean : ; rm -f psdparse psdparse.exe $(OBJ) $(OBJW32)
@@ -60,11 +61,29 @@ psdparse : $(OBJ) $(LIBPNGA)
 	$(CC) -o $@ $(filter-out %.a,$^) -L$(PNGDIR) -lz -lpng
 
 # Win32 EXE built by MinGW
-exe : psdparse.exe
+# psdparse.exe - standard CLI tool
+# psd2png.exe  - variant intended for drag'n'drop, that always writes PNGs and asset list
+exe : psdparse.exe psd2png.exe
 
-psdparse.exe : CPPFLAGS += -DDIRSEP=\'\\\\\' -I$(PNGDIRW32) -I$(ZLIBDIRW32)
+W32FLAGS = -DDIRSEP=\'\\\\\' -I$(PNGDIRW32) -I$(ZLIBDIRW32)
+
+psdparse.exe : CPPFLAGS += $(W32FLAGS)
+psd2png.exe  : CPPFLAGS += $(W32FLAGS) -DALWAYS_WRITE_PNG 
+
 psdparse.exe : $(ZLIBDIRW32)/libz.a $(PNGDIRW32)/libpng.a $(OBJW32)
 	$(MINGW_CC) -s -o $@ $(filter-out %.a,$^) -L$(ZLIBDIRW32) -L$(PNGDIRW32) -lpng -lz
+psd2png.exe : $(ZLIBDIRW32)/libz.a $(PNGDIRW32)/libpng.a \
+			  $(subst main.o,main_psd2png.o,$(OBJW32))
+	$(MINGW_CC) -s -o $@ $(filter-out %.a,$^) -L$(ZLIBDIRW32) -L$(PNGDIRW32) -lpng -lz
+
+obj_w32/main_psd2png.o : main.c ; $(MINGW_CC) -o $@ -c $< $(CFLAGS) $(CPPFLAGS)
+
+obj_w32/res.o : version.rc version.h ; $(MINGW_WINDRES) -o $@ -i $<
+
+dist : psdparse-win.zip
+
+psdparse-win.zip : README.txt gpl.html psdparse.exe psd2png.exe
+	zip -9 $@ $^
 
 # rule to build libpng
 
