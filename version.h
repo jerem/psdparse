@@ -26,9 +26,10 @@
   05-Apr-2005: 1.2 merge PNG extraction code
   10-Apr-2005: 1.3b1 ported to Win32 console app
   17-Apr-2006: 1.4b1 many cleanups
+  20-Apr-2006: 1.5b1 improve handling of extra channels, uncommon modes, and corrupt files
 */
-#define VERSION_STR "1.4b1"
-#define VERSION_NUM 1,0x40,beta,1
+#define VERSION_STR "1.5b1"
+#define VERSION_NUM 1,0x50,beta,1
 #define VERS_RSRC \
 	VERSION_NUM,\
 	verAustralia,\
@@ -36,7 +37,7 @@
 	VERSION_STR ", Copyright (C) Toby Thain 2004-6 http://www.telegraphics.com.au/" 
 
 /* formatted for Win32 VERSIONINFO resource */
-#define VI_VERS_NUM 1,4,0,1
+#define VI_VERS_NUM 1,5,0,1
 #define VI_FLAGS	VS_FF_PRERELEASE /* 0 for final, or any of VS_FF_DEBUG,VS_FF_PATCHED,VS_FF_PRERELEASE,VS_FF_PRIVATEBUILD,VS_FF_SPECIALBUILD */
 #define VI_COMMENTS	"Beta.\r\n\r\nPlease contact support@telegraphics.com.au with any bug reports, suggestions or comments.\0"	/* null terminated Comments field */
 
