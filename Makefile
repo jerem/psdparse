@@ -56,7 +56,7 @@ obj_w32/%.o : %.c ; $(MINGW_CC) -o $@ -c $< $(CFLAGS) $(CPPFLAGS)
 all : psdparse
 clean : ; rm -f psdparse psdparse.exe $(OBJ) $(OBJW32)
 
-psdparse : CPPFLAGS += -DDIRSEP=\'/\' -I$(PNGDIR)
+psdparse : CPPFLAGS += -DDIRSEP="'/'" -I$(PNGDIR)
 psdparse : $(OBJ) $(LIBPNGA)
 	$(CC) -o $@ $(filter-out %.a,$^) -L$(PNGDIR) -lz -lpng
 
@@ -65,7 +65,7 @@ psdparse : $(OBJ) $(LIBPNGA)
 # psd2png.exe  - variant intended for drag'n'drop, that always writes PNGs and asset list
 exe : psdparse.exe psd2png.exe
 
-W32FLAGS = -DDIRSEP=\'\\\\\' -I$(PNGDIRW32) -I$(ZLIBDIRW32)
+W32FLAGS = -DDIRSEP="'\\\\'" -I$(PNGDIRW32) -I$(ZLIBDIRW32)
 
 psdparse.exe : CPPFLAGS += $(W32FLAGS)
 psd2png.exe  : CPPFLAGS += $(W32FLAGS) -DALWAYS_WRITE_PNG 

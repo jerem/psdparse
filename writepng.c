@@ -100,6 +100,7 @@ FILE* pngsetupwrite(FILE *psd, char *dir, char *name, int width, int height,
 				if(h->mode == ModeBitmap) 
 					png_set_invert_mono(png_ptr);
 				else if(h->mode == ModeIndexedColor){
+					// go get the colour palette
 					savepos = ftell(psd);
 					fseek(psd,h->colormodepos,SEEK_SET);
 					n = get4B(psd);
