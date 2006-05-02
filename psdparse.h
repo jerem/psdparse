@@ -67,6 +67,9 @@ struct layer_info{
 	long bottom;
 	long right;
 	short channels;
+	
+	// runtime data (not in file)
+	long *chlengths; // array of channel lengths
 };
 struct blend_mode_info{
 	char sig[4];
@@ -92,9 +95,10 @@ long get4B(FILE *f);
 short get2B(FILE *f);
 void skipblock(FILE *f,char *desc);
 void dumprow(unsigned char *b,int n);
-int dochannel(FILE *f,int channels,int rows,int cols,int depth,long **rowpos);
-void doimage(FILE *f,char *name,int merged,int channels,
-						 int rows,int cols,struct psd_header *h);
+int dochannel(FILE *f,struct layer_info *li,int idx,int channels,
+			  int rows,int cols,int depth,long **rowpos);
+void doimage(FILE *f,struct layer_info *li,char *name,int merged,int channels,
+			 int rows,int cols,struct psd_header *h);
 void dolayermaskinfo(FILE *f,struct psd_header *h);
 char *finddesc(int id);
 long doirb(FILE *f);

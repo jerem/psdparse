@@ -169,7 +169,8 @@ void dumprow(unsigned char *b,int n){
 	VERBOSE("\n");
 }
 
-int dochannel(FILE *f,int channels,int rows,int cols,int depth,long **rowpos){
+int dochannel(FILE *f,struct layer_info *li,int idx,int channels,
+			  int rows,int cols,int depth,long **rowpos){
 	int j,k,ch,dumpit;
 	long pos;
 	unsigned char *rowbuf;
@@ -177,7 +178,16 @@ int dochannel(FILE *f,int channels,int rows,int cols,int depth,long **rowpos){
 	static char *comptype[] = {"raw","RLE"};
 
 	unsigned comp = get2B(f);
-	if(comp>RLECOMP) fatal("# bad compression type\n");
+	if(comp>RLECOMP){
+		warn("## bad compression type %d, can't process channel\n");
+		if(li){
+			long chlen = li->chlengths[idx];
+			warn("## skipping rest of channel data (%d bytes)",chlen-2);
+			fseek(f, chlen-2, SEEK_CUR);
+		}else 
+			fatal("## occurred in merged image, must abort\n");
+		return comp;
+	}
 	VERBOSE("    compression = %d (%s)\n",comp,comptype[comp]);
 
 	rb = (cols*depth + 7)/8;
@@ -285,7 +295,7 @@ void writechannels(FILE *f, char *dir, char *name, int chcomp[], long **rowpos,
 	}
 }
 
-void doimage(FILE *f,char *name,int merged,int channels,
+void doimage(FILE *f,struct layer_info *li,char *name,int merged,int channels,
 			 int rows,int cols,struct psd_header *h){
 	int ch,comp,startchan,pngchan,color_type,
 		*chcomp = checkmalloc(sizeof(int)*channels);
@@ -344,7 +354,7 @@ void doimage(FILE *f,char *name,int merged,int channels,
 		// (For multichannel (and maybe other?) modes, we should just write all
 		// channels per step 2)
 		
-		comp = dochannel(f,channels,rows,cols,h->depth,rowpos);
+		comp = dochannel(f,li,0/*no index*/,channels,rows,cols,h->depth,rowpos);
 		for( ch=0 ; ch < channels ; ++ch ) 
 			chcomp[ch] = comp; /* for all merged channels have same compression type */
 		
@@ -371,7 +381,7 @@ void doimage(FILE *f,char *name,int merged,int channels,
 		// (pngwriteimage() will take care of interleaving this data for libpng)
 		for( ch=0 ; ch < channels ; ++ch ){
 			VERBOSE("  channel %d:\n",ch);
-			chcomp[ch] = dochannel(f,1,rows,cols,h->depth,rowpos+ch);
+			chcomp[ch] = dochannel(f,li,ch,1/*count*/,rows,cols,h->depth,rowpos+ch);
 		}
 		if(writepng){
 			if(pngchan){
@@ -415,22 +425,24 @@ void dolayermaskinfo(FILE *f,struct psd_header *h){
 			linfo = checkmalloc(nlayers*sizeof(struct layer_info));
 			lname = checkmalloc(nlayers*sizeof(char*));
 
-			for(i=0;i<nlayers;++i){
+			for( i=0 ; i<nlayers ; ++i ){
 				// process layer record
 				linfo[i].top = get4B(f);
 				linfo[i].left = get4B(f);
 				linfo[i].bottom = get4B(f);
 				linfo[i].right = get4B(f);
 				linfo[i].channels = get2B(f);
+				
+				linfo[i].chlengths = checkmalloc(sizeof(long) * linfo[i].channels);
 
 				VERBOSE("\n");
-				UNQUIET("  layer %d: (%ld,%ld,%ld,%ld), %d channels (%ld rows x %ld cols)\n",
+				UNQUIET("  layer %d: (%4ld,%4ld,%4ld,%4ld), %d channels (%4ld rows x %4ld cols)\n",
 						i, linfo[i].top, linfo[i].left, linfo[i].bottom, linfo[i].right, linfo[i].channels,
 						linfo[i].bottom-linfo[i].top, linfo[i].right-linfo[i].left);
 	
 				for( j=0 ; j < linfo[i].channels ; ++j ){
 					chid = get2B(f);
-					chlen = get4B(f);
+					chlen = linfo[i].chlengths[j] = get4B(f);
 					VERBOSE("    channel %2d: id=%2d, %5ld bytes\n",j,chid,chlen);
 				}
 
@@ -474,10 +486,10 @@ void dolayermaskinfo(FILE *f,struct psd_header *h){
 				VERBOSE("\n  layer %d (\"%s\"):\n",i,lname[i]);
 			  
 				if(listfile && pixw && pixh)
-					fprintf(listfile,"\t\"%s\" = { pos={%3ld,%3ld}, size={%3ld,%3ld} },\n",
+					fprintf(listfile,"\t\"%s\" = { pos={%4ld,%4ld}, size={%4ld,%4ld} },\n",
 							lname[i], linfo[i].left, linfo[i].top, pixw, pixh);
 		
-				doimage(f, lname[i], 0/*not merged*/, linfo[i].channels, 
+				doimage(f, linfo+i, lname[i], 0/*not merged*/, linfo[i].channels, 
 						pixh, pixw, h);
 			}
 
@@ -541,21 +553,20 @@ int main(int argc,char *argv[]){
 	FILE *f;
 	int i,indexptr,opt;
 	char *base,*ext;
+	static struct option longopts[] = {
+		{"verbose",  no_argument, &verbose, 1},
+		{"quiet",    no_argument, &quiet, 1},
+		{"help",     no_argument, &help, 1},
+		{"pngdir",   required_argument, NULL, 'd'},
+		{"writepng", no_argument, &writepng, 1},
+		{"makedirs", no_argument, &makedirs, 1},
+		{"list",     no_argument, &writelist, 1},
+		{"split",    no_argument, &splitchannels, 1},
+		{NULL,0,NULL,0}
+	};
 
-	do{
-		static struct option longopts[] = {
-			{"verbose",  no_argument, &verbose, 1},
-			{"quiet",    no_argument, &quiet, 1},
-			{"help",     no_argument, &help, 1},
-			{"pngdir",   required_argument, NULL, 'd'},
-			{"writepng", no_argument, &writepng, 1},
-			{"makedirs", no_argument, &makedirs, 1},
-			{"list",     no_argument, &writelist, 1},
-			{"split",    no_argument, &splitchannels, 1},
-			{NULL,0,NULL,0}
-		};
-
-		switch(opt = getopt_long(argc,argv,"vqd:wmlsh",longopts,&indexptr)){
+	while( (opt = getopt_long(argc,argv,"vqd:wmlsh",longopts,&indexptr)) != -1)
+		switch(opt){
 		case 'v': verbose = 1; break;
 		case 'q': quiet = 1; break;
 		case 'd': pngdir = optarg;
@@ -564,9 +575,8 @@ int main(int argc,char *argv[]){
 		case 'l': writelist = 1; break;
 		case 's': splitchannels = 1; break;
 		case 'h':
-		case '?': help = 1; break;
+		default:  help = 1; break;
 		}
-	}while(opt != -1);
 
 	if(help)
 		fprintf(stderr,"usage: %s [options] psdfile...\n\
@@ -602,13 +612,13 @@ int main(int argc,char *argv[]){
 
 			// file header
 			fread(h.sig,1,4,f);
-			h.version = get2B(f);
+			h.version  = get2B(f);
 			get4B(f); get2B(f); // reserved[6];
 			h.channels = get2B(f);
-			h.rows = get4B(f);
-			h.cols = get4B(f);
-			h.depth = get2B(f);
-			h.mode = get2B(f);
+			h.rows     = get4B(f);
+			h.cols     = get4B(f);
+			h.depth    = get2B(f);
+			h.mode     = get2B(f);
 
 			if(!feof(f) && !memcmp(h.sig,"8BPS",4) && h.version == 1){
 
@@ -623,7 +633,7 @@ int main(int argc,char *argv[]){
 
 				// now process image data
 				base = strrchr(argv[i],DIRSEP);
-				doimage(f,base ? base+1 : argv[i],1/*merged*/,h.channels,h.rows,h.cols,&h);
+				doimage(f,NULL,base ? base+1 : argv[i],1/*merged*/,h.channels,h.rows,h.cols,&h);
 
 				UNQUIET("  done.\n\n");
 			}else
