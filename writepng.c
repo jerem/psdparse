@@ -41,8 +41,8 @@ FILE* pngsetupwrite(FILE *psd, char *dir, char *name, int width, int height,
 		MKDIR(dir,0755);
 
 		if(strchr(name,DIRSEP)){
-			if(!makedirs) 
-				fprintf(stderr,"# warning: replaced %c's in filename (use --makedirs if you want subdirectories)\n",DIRSEP);
+			if(!makedirs)
+				alwayswarn("# warning: replaced %c's in filename (use --makedirs if you want subdirectories)\n",DIRSEP);
 			for( last=name ; (last=strchr(last+1,'/')) ; )
 				if(makedirs){
 					last[0] = 0;
@@ -68,13 +68,13 @@ FILE* pngsetupwrite(FILE *psd, char *dir, char *name, int width, int height,
 		case PNG_COLOR_TYPE_RGB_ALPHA:  pngtype="RGB_ALPHA"; break;
 		}
 		if(color_type == -1){
-			fprintf(stderr,"## don't know how to write PNG of %d channels (%s)\n", 
+			alwayswarn("## don't know how to write PNG of %d channels (%s)\n", 
 					channels, mode_names[h->mode]);
 			return NULL;
 		}else
 		{
 			if( !(png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL)) ){
-				fputs("### pngsetupwrite: png_create_write_struct failed\n",stderr);
+				alwayswarn("### pngsetupwrite: png_create_write_struct failed\n");
 				return NULL;
 			}
 
@@ -86,7 +86,7 @@ FILE* pngsetupwrite(FILE *psd, char *dir, char *name, int width, int height,
 
 				if( !(info_ptr = png_create_info_struct(png_ptr)) || setjmp(png_jmpbuf(png_ptr)) )
 				{ /* If we get here, libpng had a problem */
-					fputs("### pngsetupwrite: Fatal error in libpng\n",stderr);
+					alwayswarn("### pngsetupwrite: Fatal error in libpng\n");
 					fclose(f);
 					png_destroy_write_struct(&png_ptr, &info_ptr);
 					return NULL;
@@ -126,9 +126,9 @@ FILE* pngsetupwrite(FILE *psd, char *dir, char *name, int width, int height,
 				/* swap location of alpha bytes from ARGB to RGBA */
 				if(alphalast) png_set_swap_alpha(png_ptr);
 
-			}else fprintf(stderr,"### can't open \"%s\" for writing\n",pngname);
+			}else alwayswarn("### can't open \"%s\" for writing\n",pngname);
 		}
-	}else fprintf(stderr,"### skipping layer \"%s\" (%dx%d)\n",name,width,height);
+	}else alwayswarn("### skipping layer \"%s\" (%dx%d)\n",name,width,height);
 
 	return f;
 }
@@ -151,7 +151,7 @@ void pngwriteimage(FILE *psd, int comp[], long **rowpos,
 
 	if( setjmp(png_jmpbuf(png_ptr)) )
 	{ /* If we get here, libpng had a problem writing the file */
-		fputs("### pngwriteimage: Fatal error in libpng\n",stderr);
+		alwayswarn("### pngwriteimage: Fatal error in libpng\n");
 
 done:	/* put cleanup code here, so that we are sure to do it in case of a PNG error */
 		free(rowbuf);
@@ -172,14 +172,14 @@ done:	/* put cleanup code here, so that we are sure to do it in case of a PNG er
 			//printf("rowpos[%d][%4d] = %7d\n",ch,j,rowpos[ch][j]);
 
 			if(fseek(psd,rowpos[ch][j],SEEK_SET) == -1){
-				fprintf(stderr,"# error seeking to %ld\n",rowpos[ch][j]);
+				alwayswarn("# error seeking to %ld\n",rowpos[ch][j]);
 				memset(inrows[i],0,rb);
 			}else{
 
 				if(comp[ch] == RAWDATA){ /* uncompressed row */
 					n = fread(inrows[i],1,rb,psd);
 					if(n != rb){
-						fprintf(stderr,"# error reading row data (raw) @ %ld\n",rowpos[ch][j]);
+						alwayswarn("# error reading row data (raw) @ %ld\n",rowpos[ch][j]);
 						memset(inrows[i]+n,0,rb-n);
 					}
 				}
@@ -187,7 +187,7 @@ done:	/* put cleanup code here, so that we are sure to do it in case of a PNG er
 					n = rowpos[ch][j+1] - rowpos[ch][j];
 					if(n>2*rb) n = 2*rb; // sanity check
 					if(fread(rledata,1,n,psd) != n){
-						fprintf(stderr,"# error reading row data (RLE) @ %ld\n",rowpos[ch][j]);
+						alwayswarn("# error reading row data (RLE) @ %ld\n",rowpos[ch][j]);
 						memset(inrows[i],0,rb);
 					}else
 						unpackbits(inrows[i],rledata,rb,n);

@@ -116,9 +116,14 @@ static FILE *listfile = NULL;
 	static int writepng = 0,writelist = 0;
 #endif
 
-void fatal(char *s){ fputs(s,stderr); exit(EXIT_FAILURE); }
+void fatal(char *s){
+	fflush(stdout);
+	fputs(s,stderr);
+	exit(EXIT_FAILURE);
+}
 
 static int nwarns = 0;
+
 void warn(char *fmt,...){
 	char s[0x200];
 	va_list v;
@@ -129,8 +134,20 @@ void warn(char *fmt,...){
 		va_start(v,fmt);
 		vsnprintf(s,0x200,fmt,v);
 		va_end(v);
+		fflush(stdout);
 		fprintf(stderr,"# warning: %s\n",s);
 	}
+}
+
+void alwayswarn(char *fmt,...){
+	char s[0x200];
+	va_list v;
+
+	va_start(v,fmt);
+	vsnprintf(s,0x200,fmt,v);
+	va_end(v);
+	fflush(stdout);
+	fputs(s,stderr);
 }
 
 void *checkmalloc(long n){
@@ -236,7 +253,7 @@ int dochannel(FILE *f,struct layer_info *li,int idx,int channels,
 			if(comp == RLECOMP){
 				n = rlebuf[k++];
 				if(n>2*rb){
-					warn("bad RLE count @ row %d",j);
+					warn("bad RLE count %d @ row %d",n,j);
 					n = 2*rb;
 				}
 				if(fread(rowbuf,1,n,f) == n){
@@ -637,11 +654,12 @@ int main(int argc,char *argv[]){
 
 				UNQUIET("  done.\n\n");
 			}else
-				fprintf(stderr,"# \"%s\": couldn't read header, is not a PSD, or version is not 1!\n",argv[i]);
+				alwayswarn("# \"%s\": couldn't read header, is not a PSD, or version is not 1!\n",argv[i]);
 
 			if(listfile) fclose(listfile);
 			fclose(f);
-		}else fprintf(stderr,"# \"%s\": couldn't open\n",argv[i]);
+		}else
+			alwayswarn("# \"%s\": couldn't open\n",argv[i]);
 	}
 	return EXIT_SUCCESS;
 }

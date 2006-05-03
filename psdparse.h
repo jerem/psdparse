@@ -90,6 +90,7 @@ extern int verbose,quiet,makedirs;
 
 void fatal(char *s);
 void warn(char *fmt,...);
+void alwayswarn(char *fmt,...);
 void *checkmalloc(long n);
 long get4B(FILE *f);
 short get2B(FILE *f);

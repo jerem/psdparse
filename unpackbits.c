@@ -28,7 +28,9 @@ int unpackbits(unsigned char *outp,unsigned char *inp,int outlen,int inlen){
 	/* i counts output bytes; outlen = expected output size */
 	for(i = 0 ; inlen > 0 && i < outlen ; ){
 		len = *inp++; --inlen; /* get flag byte */
-		if(len != 128){ /* ignore this flag value */
+		if(len == 128) /* ignore this flag value */
+			warn("RLE flag byte=128 ignored");
+		else{
 			if(len > 128){
 				len = 1+256-len;
 				val = *inp++; --inlen; /* get value to repeat */
