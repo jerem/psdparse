@@ -195,10 +195,11 @@ int dochannel(FILE *f, struct layer_info *li, int idx, int channels,
 	static char *comptype[] = {"raw","RLE"};
 	long chlen = li ? li->chlengths[idx] : 0;
 
-	if(li)
+	if(li){
 		VERBOSE(">>> dochannel %d/%d filepos=%7ld bytes=%7ld\n",idx,channels,chpos,li->chlengths[idx]);
-	else
+	}else{
 		VERBOSE(">>> dochannel %d/%d filepos=%7ld\n",idx,channels,chpos);
+	}
 
 	if(li && chlen < 2){
 		alwayswarn("## channel too short (%d bytes)\n",chlen);
