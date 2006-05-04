@@ -138,6 +138,14 @@ int dochannel(FILE *f, struct layer_info *li, int idx, int channels,
 		alwayswarn("## channel too short (%d bytes)\n",chlen);
 		if(chlen > 0)
 			fseek(f, chlen, SEEK_CUR); // skip it anyway, but not backwards
+		return -1;
+	}
+	
+	if(li && li->chid[idx] == -2){
+		rows = li->mask.rows;
+		cols = li->mask.cols;
+		VERBOSE("# layer mask (%4ld,%4ld,%4ld,%4ld) (%4d rows x %4d cols)\n",
+			li->mask.top,li->mask.left,li->mask.bottom,li->mask.right,rows,cols);
 	}
 
 	comp = get2B(f);
@@ -190,15 +198,15 @@ int dochannel(FILE *f, struct layer_info *li, int idx, int channels,
 	}
 
 	for(ch = k = 0 ; ch < channels ; ++ch){
-		VERBOSE(">>>   ... %d/%d, filepos= %ld\n",ch,channels,ftell(f));
 		
-		if(channels>1) VERBOSE("\n    channel %d:\n",ch);
+		//if(channels>1)
+		VERBOSE("\n    channel %d (@ %7ld):\n",ch,ftell(f));
 
 		for( j = 0 ; j < rows ; ++j ){
 			if(rows > 3*CONTEXTROWS){
-				if(j==rows-CONTEXTROWS) 
+				if(j == rows-CONTEXTROWS) 
 					VERBOSE("    ...%d rows not shown...\n",rows-2*CONTEXTROWS);
-				dumpit = j<CONTEXTROWS || j>=rows-CONTEXTROWS;
+				dumpit = j < CONTEXTROWS || j >= rows-CONTEXTROWS;
 			}else 
 				dumpit = 1;
 
@@ -249,8 +257,8 @@ int dochannel(FILE *f, struct layer_info *li, int idx, int channels,
 #define BITSTR(f) ((f) ? "(1)" : "(0)")
 
 void writechannels(FILE *f, char *dir, char *name, int chcomp[], 
-				   long **rowpos, int startchan, int channels, int alphalast,
-				   int rows, int cols, struct psd_header *h){
+					 struct layer_info *li, long **rowpos, int startchan, 
+					 int channels, int rows, int cols, struct psd_header *h){
 	char pngname[FILENAME_MAX];
 	int i,ch;
 	FILE *png;
@@ -258,16 +266,21 @@ void writechannels(FILE *f, char *dir, char *name, int chcomp[],
 	for( i = 0 ; i < channels ; ++i ){
 		// build PNG file name
 		strcpy(pngname,name);
-		ch = startchan + i - !alphalast;
-		if(ch == -1)
-			strcat(pngname,".alpha");
+		ch = li ? li->chid[startchan + i] : startchan + i;
+		if(ch == -2){
+			strcat(pngname,".lmask");
+			// layer mask channel is a special case, gets its own dimensions
+			rows = li->mask.rows;
+			cols = li->mask.cols;
+		}else if(ch == -1)
+			strcat(pngname,li ? ".trans" : ".alpha");
 		else if(ch < strlen(channelsuffixes[h->mode]))
 			sprintf(pngname+strlen(pngname),".%c",channelsuffixes[h->mode][ch]);
 		else
 			sprintf(pngname+strlen(pngname),".%d",ch);
 			
-		if( (png = pngsetupwrite(f,dir,pngname,cols,rows,1,PNG_COLOR_TYPE_GRAY,0,h)) )
-			pngwriteimage(f,chcomp,rowpos,startchan+i,1,rows,cols,h->depth);
+		if( (png = pngsetupwrite(f,dir,pngname,cols,rows,1,PNG_COLOR_TYPE_GRAY,h)) )
+			pngwriteimage(f,chcomp,li,rowpos,startchan+i,1,rows,cols,h->depth);
 	}
 }
 
@@ -278,8 +291,11 @@ void doimage(FILE *f, struct layer_info *li, char *name,
 	long **rowpos = checkmalloc(sizeof(long*)*channels);
 	FILE *png = NULL; /* handle to the output PNG file */
 
-	for( ch = 0 ; ch < channels ; ++ch ) 
-		rowpos[ch] = checkmalloc(sizeof(long)*(rows+1));
+	for( ch = 0 ; ch < channels ; ++ch ){
+		// is it a layer mask? if so, use special case row count
+		int chrows = li && li->chid[ch] == -2 ? li->mask.rows : rows;
+		rowpos[ch] = checkmalloc(sizeof(long)*(chrows+1));
+	}
 
 	pngchan = color_type = 0;
 	switch(h->mode){
@@ -288,11 +304,10 @@ void doimage(FILE *f, struct layer_info *li, char *name,
 	case ModeGray16:
 	case ModeDuotone:
 	case ModeDuotone16:
-		if(channels == 1 || (!li && !mergedalpha)){
-			color_type = PNG_COLOR_TYPE_GRAY;
-			pngchan = 1;
-		}
-		else if(channels >= 2){
+		color_type = PNG_COLOR_TYPE_GRAY;
+		pngchan = 1;
+		// check if there is an alpha channel, or if merged data has alpha
+		if( (li && li->chindex[-1] != -1) || (channels>1 && mergedalpha) ){
 			color_type = PNG_COLOR_TYPE_GRAY_ALPHA;
 			pngchan = 2;
 		}
@@ -303,11 +318,9 @@ void doimage(FILE *f, struct layer_info *li, char *name,
 		break;
 	case ModeRGBColor:
 	case ModeRGB48:
-		if(channels == 3 || (!li && !mergedalpha)){
-			color_type = PNG_COLOR_TYPE_RGB;
-			pngchan = 3;
-		}
-		else if(channels >= 4){
+		color_type = PNG_COLOR_TYPE_RGB;
+		pngchan = 3;
+		if( (li && li->chindex[-1] != -1) || (channels>3 && mergedalpha) ){
 			color_type = PNG_COLOR_TYPE_RGB_ALPHA;
 			pngchan = 4;
 		}
@@ -330,7 +343,7 @@ void doimage(FILE *f, struct layer_info *li, char *name,
 		// (For multichannel (and maybe other?) modes, we should just write all
 		// channels per step 2)
 		
-		comp = dochannel(f,li,0/*no index*/,channels,rows,cols,h->depth,rowpos);
+		comp = dochannel(f,NULL,0/*no index*/,channels,rows,cols,h->depth,rowpos);
 		for( ch=0 ; ch < channels ; ++ch ) 
 			chcomp[ch] = comp; /* merged channels share same compression type */
 		
@@ -340,15 +353,15 @@ void doimage(FILE *f, struct layer_info *li, char *name,
 			if(pngchan && !splitchannels){
 				// recognisable PNG mode, so spit out the merged image
 				if( (png = pngsetupwrite(f, pngdir, name, 
-										 cols, rows, pngchan, color_type, 0/*ARGB*/, h)) )
-					pngwriteimage(f,chcomp,rowpos,0,pngchan,rows,cols,h->depth);
+										 cols, rows, pngchan, color_type, h)) )
+					pngwriteimage(f,chcomp,NULL,rowpos,0,pngchan,rows,cols,h->depth);
 				startchan += pngchan;
 			}
 			if(startchan < channels){
 				if(!pngchan)
 					UNQUIET("# writing %s image as split channels...\n",mode_names[h->mode]);
-				writechannels(f, pngdir, name, chcomp, rowpos, 
-							  startchan, channels-startchan, 1/*alphalast*/, rows, cols, h);
+				writechannels(f, pngdir, name, chcomp, NULL, rowpos, 
+							  startchan, channels-startchan, rows, cols, h);
 			}
 		}
 	}else{
@@ -356,20 +369,25 @@ void doimage(FILE *f, struct layer_info *li, char *name,
 		// for each channel, store its row pointers sequentially 
 		// in the rowpos[] array, and its compression type in chcomp[] array
 		// (pngwriteimage() will take care of interleaving this data for libpng)
-		for( ch=0 ; ch < channels ; ++ch ){
+		for( ch = 0 ; ch < channels ; ++ch ){
 			VERBOSE("  channel %d:\n",ch);
 			chcomp[ch] = dochannel(f,li,ch,1/*count*/,rows,cols,h->depth,rowpos+ch);
 		}
 		if(writepng){
 			nwarns = 0;
-			if(pngchan){
+			if(pngchan && !splitchannels){
 				if( (png = pngsetupwrite(f, pngdir, name, 
-										 cols, rows, channels, color_type, 1/*RGBA*/, h)) )
-					pngwriteimage(f,chcomp,rowpos,0,pngchan,rows,cols,h->depth);
+										 cols, rows, pngchan, color_type, h)) )
+					pngwriteimage(f,chcomp,li,rowpos,0,pngchan,rows,cols,h->depth);
+					// spit out any 'extra' channels (e.g. layer transparency)
+					for( ch = 0 ; ch < channels ; ++ch )
+						if(li->chid[ch] < -1 || li->chid[ch] > pngchan)
+							writechannels(f, pngdir, name, chcomp, li, rowpos,
+									ch, 1, rows, cols, h);
 			}else{
 				UNQUIET("# writing layer as split channels...\n");
-				writechannels(f, pngdir, name, chcomp, rowpos, 
-							  0, channels, 0/*alpha first*/, rows, cols, h);
+				writechannels(f, pngdir, name, chcomp, li, rowpos,
+						0, channels, rows, cols, h);
 			}
 		}
 	}
@@ -402,7 +420,7 @@ void dolayermaskinfo(FILE *f,struct psd_header *h){
 			UNQUIET("\n%d layers:\n",nlayers);
 			
 			if( nlayers*(18+6*h->channels) > layerlen ){ // sanity check
-				alwayswarn("### ridiculous number of layers, giving up.\n");
+				alwayswarn("### unlikely number of layers, giving up.\n");
 				return;
 			}
 			
@@ -427,14 +445,26 @@ void dolayermaskinfo(FILE *f,struct psd_header *h){
 					return;
 				}
 
-				linfo[i].chlengths = checkmalloc(sizeof(long) * linfo[i].channels);
+				linfo[i].chlengths = checkmalloc(linfo[i].channels*sizeof(long));
+				linfo[i].chid = checkmalloc(linfo[i].channels*sizeof(int));
+				linfo[i].chindex = checkmalloc((linfo[i].channels+2)*sizeof(int));
+				linfo[i].chindex += 2; // so we can index array from [-2] (hackish)
+				
+				for( j = -2 ; j < linfo[i].channels ; ++j )
+					linfo[i].chindex[j] = -1;
 	
 				for( j=0 ; j < linfo[i].channels ; ++j ){
-					chid = get2B(f);
+					chid = linfo[i].chid[j] = get2B(f);
 					chlen = linfo[i].chlengths[j] = get4B(f);
+					
+					if(chid >= -2 && chid < linfo[i].channels)
+						linfo[i].chindex[chid] = j;
+					else
+						warn("unexpected channel id %d",chid);
+						
 					switch(chid){
-					case -1: chidstr = " (transparency mask)"; break;
 					case -2: chidstr = " (layer mask)"; break;
+					case -1: chidstr = " (transparency mask)"; break;
 					default:
 						if(chid < strlen(channelsuffixes[h->mode]))
 							sprintf(chidstr = tmp, " (%c)", channelsuffixes[h->mode][chid]); // it's a mode-ish channel
@@ -463,15 +493,32 @@ void dolayermaskinfo(FILE *f,struct psd_header *h){
 				extrastart = ftell(f);
 				//printf("  (extra data: %d bytes @ %d)\n",extralen,extrastart);
 
-				skipblock(f,"layer mask data");
+				// layer mask data
+				if( (linfo[i].mask.size = get4B(f)) ){
+					linfo[i].mask.top = get4B(f);
+					linfo[i].mask.left = get4B(f);
+					linfo[i].mask.bottom = get4B(f);
+					linfo[i].mask.right = get4B(f);
+					linfo[i].mask.default_colour = fgetc(f);
+					linfo[i].mask.flags = fgetc(f);
+					fseek(f,linfo[i].mask.size-18,SEEK_CUR); // skip remainder
+					linfo[i].mask.rows = linfo[i].mask.bottom - linfo[i].mask.top;
+					linfo[i].mask.cols = linfo[i].mask.right - linfo[i].mask.left;
+				}
+		
 				skipblock(f,"layer blending ranges");
 				
 				// layer name
 				namelen = fgetc(f);
-				lname[i] = checkmalloc(PAD4(1+namelen));
+				lname[i] = checkmalloc(PAD4(1+namelen)+16);
 				fread(lname[i],1,PAD4(1+namelen),f);
-				lname[i][namelen] = 0;
-				UNQUIET("    name: \"%s\"\n",lname[i]);
+				if(namelen){
+					lname[i][namelen] = 0;
+					UNQUIET("    name: \"%s\"\n",lname[i]);
+					if(lname[i][0] == '.')
+						lname[i][0] = '_';
+				}else
+					sprintf(lname[i],"layer%d",i);
 		
 				fseek(f,extrastart+extralen,SEEK_SET); // skip over any extra data
 			}

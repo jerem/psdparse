@@ -27,7 +27,7 @@ static png_structp png_ptr;
 static png_infop info_ptr;
 
 FILE* pngsetupwrite(FILE *psd, char *dir, char *name, int width, int height, 
-					int channels, int color_type, int alphalast, struct psd_header *h){
+					int channels, int color_type, struct psd_header *h){
 	char pngname[PATH_MAX],*last,d[PATH_MAX],*pngtype = NULL;
 	static FILE *f; // static, because it might get used post-longjmp()
 	unsigned char *palette;
@@ -54,7 +54,7 @@ FILE* pngsetupwrite(FILE *psd, char *dir, char *name, int width, int height,
 		if(strchr(name,DIRSEP)){
 			if(!makedirs)
 				alwayswarn("# warning: replaced %c's in filename (use --makedirs if you want subdirectories)\n",DIRSEP);
-			for( last=name ; (last=strchr(last+1,'/')) ; )
+			for( last = name ; (last = strchr(last+1,'/')) ; )
 				if(makedirs){
 					last[0] = 0;
 					strcpy(d,dir);
@@ -130,9 +130,6 @@ FILE* pngsetupwrite(FILE *psd, char *dir, char *name, int width, int height,
 			
 			png_set_compression_level(png_ptr,Z_BEST_COMPRESSION);
 
-			/* swap location of alpha bytes from ARGB to RGBA */
-			if(alphalast) png_set_swap_alpha(png_ptr);
-
 		}else alwayswarn("### can't open \"%s\" for writing\n",pngname);
 
 	}else alwayswarn("### skipping layer \"%s\" (%dx%d)\n",name,width,height);
@@ -140,19 +137,40 @@ FILE* pngsetupwrite(FILE *psd, char *dir, char *name, int width, int height,
 	return f;
 }
 
-void pngwriteimage(FILE *psd, int comp[], long **rowpos,
+void pngwriteimage(FILE *psd, int comp[], struct layer_info *li, long **rowpos,
 				   int startchan, int pngchan, int rows, int cols, int depth){
 	int i,j,ch;
 	unsigned n,rb = (depth*cols+7)/8,rlebytes;
 	unsigned char *rowbuf,*inrows[4],*rledata,*p;
 	short *q;
 	long savepos = ftell(psd);
+	int map[4];
 
 	rowbuf = checkmalloc(rb*pngchan);
 	rledata = checkmalloc(2*rb);
 
-	for( ch = 0 ; ch < pngchan ; ++ch )
+	for( ch = 0 ; ch < pngchan ; ++ch ){
 		inrows[ch] = checkmalloc(rb);
+		// build mapping so that png channel 0 --> channel with id 0, etc
+		// and png alpha --> channel with id -1
+		map[ch] = li && pngchan>1 ? li->chindex[ch] : ch;
+	}
+	
+	// find the alpha channel, if needed
+	if(pngchan == 2 && li){ // grey+alpha
+		if(li->chindex[-1] == -1)
+			alwayswarn("### writing Grey+Alpha PNG, but no alpha found?\n");
+		else
+			map[1] = li->chindex[-1];
+	}else if(pngchan == 4 && li){ // RGB+alpha
+		if(li->chindex[-1] == -1)
+			alwayswarn("### writing RGB+Alpha PNG, but no alpha found?\n");
+		else
+			map[3] = li->chindex[-1];
+	}
+	
+	for( ch = 0 ; ch < pngchan ; ++ch )
+		alwayswarn("# channel map[%d] -> %d\n",ch,map[ch]);
 
 	if( setjmp(png_jmpbuf(png_ptr)) )
 	{ /* If we get here, libpng had a problem writing the file */
@@ -162,7 +180,9 @@ void pngwriteimage(FILE *psd, int comp[], long **rowpos,
 
 	for( j = 0 ; j < rows ; ++j ){
 		for( i = 0 ; i < pngchan ; ++i ){
-			ch = startchan+i;
+			// startchan must be zero for multichannel,
+			// and for single channel, map[0] always == 0
+			ch = startchan + map[i];
 			/* get row data */
 			//printf("rowpos[%d][%4d] = %7d\n",ch,j,rowpos[ch][j]);
 

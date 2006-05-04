@@ -63,6 +63,20 @@ struct psd_header{
 	long colormodepos;
 };
 
+struct layer_mask_info{
+	long size;
+	long top;
+	long left;
+	long bottom;
+	long right;
+	char default_colour;
+	char flags;
+	//char reserved[2];
+	
+	// runtime data
+	long rows,cols;
+};
+
 struct layer_info{
 	long top;
 	long left;
@@ -72,6 +86,9 @@ struct layer_info{
 	
 	// runtime data (not in file)
 	long *chlengths; // array of channel lengths
+	int *chid;       // channel ids
+	int *chindex;    // lookup channel number by id (inverse of chid[])
+	struct layer_mask_info mask;
 };
 
 struct blend_mode_info{
@@ -109,8 +126,8 @@ long doirb(FILE *f);
 void doimageresources(FILE *f);
 
 FILE* pngsetupwrite(FILE *psd, char *dir, char *name, int width, int height, 
-					int channels, int color_type, int alphalast, struct psd_header *h);
-void pngwriteimage(FILE *psd, int comp[], long **rowpos,
+					int channels, int color_type, struct psd_header *h);
+void pngwriteimage(FILE *psd, int comp[], struct layer_info *li, long **rowpos,
 				   int startchan, int pngchan, int rows, int cols, int depth);
 
 int unpackbits(unsigned char *outp,unsigned char *inp,int rowbytes,int inlen);
