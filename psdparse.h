@@ -17,6 +17,7 @@
     Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 */
 
+#include <stdio.h>
 #include <limits.h>
 
 #ifndef PATH_MAX
@@ -61,6 +62,7 @@ struct psd_header{
 	// following fields are for our purposes, not actual header fields
 	long colormodepos;
 };
+
 struct layer_info{
 	long top;
 	long left;
@@ -71,6 +73,7 @@ struct layer_info{
 	// runtime data (not in file)
 	long *chlengths; // array of channel lengths
 };
+
 struct blend_mode_info{
 	char sig[4];
 	char key[4];
@@ -85,7 +88,7 @@ struct resdesc {
 	char *str;
 };
 
-extern char *mode_names[],dirsep[];
+extern char *channelsuffixes[],*mode_names[],dirsep[];
 extern int verbose,quiet,makedirs;
 
 void fatal(char *s);

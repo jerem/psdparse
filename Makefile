@@ -46,15 +46,28 @@ MINGW_WINDRES = i386-mingw32msvc-windres
 CFLAGS   += -W -Wall -O2
 CPPFLAGS += -DDEFAULT_VERBOSE=0
 
-SRC    = main.c writepng.c unpackbits.c
+SRC    = main.c writepng.c unpackbits.c constants.c
 OBJ    = $(patsubst %.c, obj/%.o, $(SRC) )
 OBJW32 = $(patsubst %.c, obj_w32/%.o, $(SRC) ) obj_w32/res.o
 
 obj/%.o     : %.c ; $(CC)       -o $@ -c $< $(CFLAGS) $(CPPFLAGS)
 obj_w32/%.o : %.c ; $(MINGW_CC) -o $@ -c $< $(CFLAGS) $(CPPFLAGS)
 
+.PHONY : all clean test exe dist
+
 all : psdparse
+
 clean : ; rm -f psdparse psdparse.exe $(OBJ) $(OBJW32)
+
+# fuzz testing. depends on 'garble' tool, 
+# see http://www.telegraphics.com.au/svn/garble/trunk/
+# supply your own orig.psd
+test : orig.psd ../garble/garble
+	cp orig.psd test.psd; \
+	for (( i=1 ; i<20 ; ++i )) ; do \
+		./psdparse -w -d _pass$$i test.psd; \
+		../garble/garble test.psd 100; \
+	done
 
 psdparse : CPPFLAGS += -DDIRSEP="'/'" -I$(PNGDIR)
 psdparse : $(OBJ) $(LIBPNGA)

@@ -18,7 +18,6 @@
 */
 
 #include <stdarg.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <getopt.h>
@@ -32,75 +31,9 @@ enum{
 	WARNLIMIT = 10
 };
 
+extern struct resdesc rdesc[];
+
 #define DIRSUFFIX "_png"
-
-static struct resdesc rdesc[] = {
-	{1000,"PS2.0 mode data"},
-	{1001,"Macintosh print record"},
-	{1003,"PS2.0 indexed color table"},
-	{1005,"ResolutionInfo"},
-	{1006,"Names of the alpha channels"},
-	{1007,"DisplayInfo"},
-	{1008,"Caption"},
-	{1009,"Border information"},
-	{1010,"Background color"},
-	{1011,"Print flags"},
-	{1012,"Grayscale/multichannel halftoning info"},
-	{1013,"Color halftoning info"},
-	{1014,"Duotone halftoning info"},
-	{1015,"Grayscale/multichannel transfer function"},
-	{1016,"Color transfer functions"},
-	{1017,"Duotone transfer functions"},
-	{1018,"Duotone image info"},
-	{1019,"B&W values for the dot range"},
-	{1021,"EPS options"},
-	{1022,"Quick Mask info"},
-	{1024,"Layer state info"},
-	{1025,"Working path"},
-	{1026,"Layers group info"},
-	{1028,"IPTC-NAA record (File Info)"},
-	{1029,"Image mode for raw format files"},
-	{1030,"JPEG quality"},
-	{1032,"Grid and guides info"},
-	{1033,"Thumbnail resource"},
-	{1034,"Copyright flag"},
-	{1035,"URL"},
-	{1036,"Thumbnail resource"},
-	{1037,"Global Angle"},
-	{1038,"Color samplers resource"},
-	{1039,"ICC Profile"},
-	{1040,"Watermark"},
-	{1041,"ICC Untagged"},
-	{1042,"Effects visible"},
-	{1043,"Spot Halftone"},
-	{1044,"Document specific IDs"},
-	{1045,"Unicode Alpha Names"},
-	{1046,"Indexed Color Table Count"},
-	{1047,"Transparent Index"},
-	{1049,"Global Altitude"},
-	{1050,"Slices"},
-	{1051,"Workflow URL"},
-	{1052,"Jump To XPEP"},
-	{1053,"Alpha Identifiers"},
-	{1054,"URL List"},
-	{1057,"Version Info"},
-	{2999,"Name of clipping path"},
-	{10000,"Print flags info"},
-	{0,NULL}
-};
-
-char *mode_names[]={
-	"Bitmap", "GrayScale", "IndexedColor", "RGBColor",
-	"CMYKColor", "HSLColor", "HSBColor", "Multichannel",
-	"Duotone", "LabColor", "Gray16", "RGB48",
-	"Lab48", "CMYK64", "DeepMultichannel", "Duotone16"
-};
-char *channelsuffixes[]={
-	"", "", "", "RGB",
-	"CMYK", "HSL", "HSB", "",
-	"", "Lab", "", "RGB",
-	"Lab", "CMYK", "", ""
-};
 
 char dirsep[]={DIRSEP,0};
 int verbose = DEFAULT_VERBOSE,quiet = 0,makedirs = 0;
@@ -241,7 +174,8 @@ int dochannel(FILE *f, struct layer_info *li, int idx, int channels,
 				if(rowpos) rowpos[ch][j] = pos;
 				pos += rlebuf[k];
 			}
-			if(rowpos) rowpos[ch][j] = pos; /* = end of last row */
+			if(rowpos) 
+				rowpos[ch][j] = pos; /* = end of last row */
 			if(j < rows) fatal("# couldn't read RLE counts");
 		}
 	}else if(rowpos){
@@ -314,8 +248,9 @@ int dochannel(FILE *f, struct layer_info *li, int idx, int channels,
 
 #define BITSTR(f) ((f) ? "(1)" : "(0)")
 
-void writechannels(FILE *f, char *dir, char *name, int chcomp[], long **rowpos, 
-				   int startchan, int channels, int alphalast, int rows, int cols, struct psd_header *h){
+void writechannels(FILE *f, char *dir, char *name, int chcomp[], 
+				   long **rowpos, int startchan, int channels, int alphalast,
+				   int rows, int cols, struct psd_header *h){
 	char pngname[FILENAME_MAX];
 	int i,ch;
 	FILE *png;
@@ -331,7 +266,7 @@ void writechannels(FILE *f, char *dir, char *name, int chcomp[], long **rowpos,
 		else
 			sprintf(pngname+strlen(pngname),".%d",ch);
 			
-		if( (png = pngsetupwrite(f,dir,pngname,cols,rows,0,PNG_COLOR_TYPE_GRAY,0,h)) )
+		if( (png = pngsetupwrite(f,dir,pngname,cols,rows,1,PNG_COLOR_TYPE_GRAY,0,h)) )
 			pngwriteimage(f,chcomp,rowpos,startchan+i,1,rows,cols,h->depth);
 	}
 }
@@ -691,7 +626,7 @@ int main(int argc,char *argv[]){
 				
 				if(h.channels <= 0 || h.channels > 64 || h.rows <= 0 || 
 					 h.cols <= 0 || h.depth < 0 || h.depth > 32 || h.mode < 0)
-					alwayswarn("### something just isn't right about that header, giving up now.\n");
+					alwayswarn("### something isn't right about that header, giving up now.\n");
 				else{
 					h.colormodepos = ftell(f);
 					skipblock(f,"color mode data");

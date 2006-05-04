@@ -219,7 +219,8 @@ done:
 	for(ch=0;ch<pngchan;++ch)
 		free(inrows[ch]);
 
-	fseek(psd,savepos,SEEK_SET); VERBOSE(">>> restoring filepos= %ld\n",savepos);
+	fseek(psd,savepos,SEEK_SET); 
+	VERBOSE(">>> restoring filepos= %ld\n",savepos);
 
 	png_destroy_write_struct(&png_ptr, &info_ptr);
 }
