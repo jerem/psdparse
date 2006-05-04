@@ -124,7 +124,7 @@ int dochannel(FILE *f, struct layer_info *li, int idx, int channels,
 	int j,k,ch,dumpit,comp;
 	long pos,chpos = ftell(f);
 	unsigned char *rowbuf;
-	unsigned rb,n,*rlebuf = NULL;
+	unsigned count,last,rb,n,*rlebuf = NULL;
 	static char *comptype[] = {"raw","RLE"};
 	long chlen = li ? li->chlengths[idx] : 0;
 
@@ -176,11 +176,15 @@ int dochannel(FILE *f, struct layer_info *li, int idx, int channels,
 		rlebuf = checkmalloc(channels*rows*sizeof(unsigned));
 		/* accumulate RLE counts, to make array of row start positions */
 		for( ch = k = 0 ; ch < channels ; ++ch ){
+			last = rb;
 			for( j = 0 ; j < rows && !feof(f) ; ++j, ++k ){
-				rlebuf[k] = (unsigned short)get2B(f);
+				count = (unsigned short)get2B(f);
+				if(count > 2*rb) // this would be impossible
+					count = last;    // make a guess, to help recover
+				rlebuf[k] = last = count;
 				//printf("rowpos[%d][%3d]=%6d\n",ch,j,pos);
 				if(rowpos) rowpos[ch][j] = pos;
-				pos += rlebuf[k];
+				pos += count;
 			}
 			if(rowpos) 
 				rowpos[ch][j] = pos; /* = end of last row */
