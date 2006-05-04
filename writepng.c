@@ -44,7 +44,7 @@ FILE* pngsetupwrite(FILE *psd, char *dir, char *name, int width, int height,
 		strcat(pngname,name);
 		strcat(pngname,".png");
 
-		if(channels < 1){
+		if(channels < 1 || channels > 4){
 			alwayswarn("## (BUG) bad channel count (%d), writing PNG \"%s\"\n", channels, pngname);
 			return NULL;
 		}
@@ -169,8 +169,8 @@ void pngwriteimage(FILE *psd, int comp[], struct layer_info *li, long **rowpos,
 			map[3] = li->chindex[-1];
 	}
 	
-	for( ch = 0 ; ch < pngchan ; ++ch )
-		alwayswarn("# channel map[%d] -> %d\n",ch,map[ch]);
+	//for( ch = 0 ; ch < pngchan ; ++ch )
+	//	alwayswarn("# channel map[%d] -> %d\n",ch,map[ch]);
 
 	if( setjmp(png_jmpbuf(png_ptr)) )
 	{ /* If we get here, libpng had a problem writing the file */

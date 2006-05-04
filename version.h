@@ -29,9 +29,10 @@
   20-Apr-2006: 1.5b1,2 improve handling of extra channels, uncommon modes, and corrupt files
   02-May-2006: 1.6b1 add ability to skip channels if data format error
   03-May-2006: 1.6b2,3,4 major improvements to handling corrupt RLE data (thanks Torsten Will)
+  04-May-2006: 1.7b1 now extract layer masks, and use channel ids to identify masks, alphas
 */
-#define VERSION_STR "1.6b4"
-#define VERSION_NUM 1,0x60,beta,4
+#define VERSION_STR "1.7b1"
+#define VERSION_NUM 1,0x70,beta,1
 #define VERS_RSRC \
 	VERSION_NUM,\
 	verAustralia,\
@@ -39,7 +40,7 @@
 	VERSION_STR ", Copyright (C) Toby Thain 2004-6 http://www.telegraphics.com.au/" 
 
 /* formatted for Win32 VERSIONINFO resource */
-#define VI_VERS_NUM 1,6,0,4
+#define VI_VERS_NUM 1,7,0,1
 #define VI_FLAGS	VS_FF_PRERELEASE /* 0 for final, or any of VS_FF_DEBUG,VS_FF_PATCHED,VS_FF_PRERELEASE,VS_FF_PRIVATEBUILD,VS_FF_SPECIALBUILD */
 #define VI_COMMENTS	"Beta.\r\n\r\nPlease contact support@telegraphics.com.au with any bug reports, suggestions or comments.\0"	/* null terminated Comments field */
 
