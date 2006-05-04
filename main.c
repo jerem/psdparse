@@ -300,7 +300,7 @@ int dochannel(FILE *f, struct layer_info *li, int idx, int channels,
 
 	}
 	
-	if(ftell(f) != (chpos+2+chlen)){
+	if(li && ftell(f) != (chpos+2+chlen)){
 		alwayswarn(">>> currentpos = %ld, should be %ld !!\n",ftell(f),chpos+2+chlen);
 		fseek(f,chpos+2+chlen,SEEK_SET);
 	}
