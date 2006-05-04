@@ -46,7 +46,7 @@ int unpackbits(unsigned char *outp,unsigned char *inp,int outlen,int inlen){
 				else{ 
 					memset(outp,val,outlen-i); // fill enough to complete row
 					warn("unpacked RLE data would overflow row (run)");
-					break;
+					len = 0; // effectively ignore this run, probably corrupt flag byte
 				}
 			}else{
 				++len;
@@ -58,7 +58,7 @@ int unpackbits(unsigned char *outp,unsigned char *inp,int outlen,int inlen){
 				}else{
 					memcpy(outp,inp,outlen-i); // copy enough to complete row
 					warn("unpacked RLE data would overflow row (copy)");
-					break;
+					len = 0; // effectively ignore
 				}
 			}
 			outp += len;
