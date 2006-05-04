@@ -196,9 +196,9 @@ int dochannel(FILE *f, struct layer_info *li, int idx, int channels,
 	long chlen = li ? li->chlengths[idx] : 0;
 
 	if(li)
-		alwayswarn(">>> dochannel %d/%d filepos=%7ld bytes=%7ld\n",idx,channels,chpos,li->chlengths[idx]);
+		VERBOSE(">>> dochannel %d/%d filepos=%7ld bytes=%7ld\n",idx,channels,chpos,li->chlengths[idx]);
 	else
-		alwayswarn(">>> dochannel %d/%d filepos=%7ld\n",idx,channels,chpos);
+		VERBOSE(">>> dochannel %d/%d filepos=%7ld\n",idx,channels,chpos);
 
 	if(li && chlen < 2){
 		alwayswarn("## channel too short (%d bytes)\n",chlen);
@@ -255,7 +255,7 @@ int dochannel(FILE *f, struct layer_info *li, int idx, int channels,
 	}
 
 	for(ch = k = 0 ; ch < channels ; ++ch){
-		alwayswarn(">>>   ... %d/%d, filepos= %ld\n",ch,channels,ftell(f));
+		VERBOSE(">>>   ... %d/%d, filepos= %ld\n",ch,channels,ftell(f));
 		
 		if(channels>1) VERBOSE("\n    channel %d:\n",ch);
 
@@ -301,7 +301,7 @@ int dochannel(FILE *f, struct layer_info *li, int idx, int channels,
 	}
 	
 	if(li && ftell(f) != (chpos+2+chlen)){
-		alwayswarn(">>> currentpos = %ld, should be %ld !!\n",ftell(f),chpos+2+chlen);
+		alwayswarn("### currentpos = %ld, should be %ld !!\n",ftell(f),chpos+2+chlen);
 		fseek(f,chpos+2+chlen,SEEK_SET);
 	}
 
@@ -448,7 +448,7 @@ void dolayermaskinfo(FILE *f,struct psd_header *h){
 	long miscstart,misclen,layerlen,chlen,skip,extrastart,extralen;
 	int nlayers,i,j,chid,namelen;
 	struct layer_info *linfo;
-	char **lname;
+	char **lname,*chidstr,tmp[10];
 	struct blend_mode_info bm;
 
 	if( (misclen = get4B(f)) ){
@@ -485,7 +485,16 @@ void dolayermaskinfo(FILE *f,struct psd_header *h){
 				for( j=0 ; j < linfo[i].channels ; ++j ){
 					chid = get2B(f);
 					chlen = linfo[i].chlengths[j] = get4B(f);
-					VERBOSE("    channel %2d: id=%2d, %7ld bytes\n",j,chid,chlen);
+					switch(chid){
+					case -1: chidstr = " (transparency mask)"; break;
+					case -2: chidstr = " (layer mask)"; break;
+					default:
+						if(chid < strlen(channelsuffixes[h->mode]))
+							sprintf(chidstr = tmp, " (%c)", channelsuffixes[h->mode][chid]); // it's a mode-ish channel
+						else
+							chidstr = ""; // can't explain it
+					}
+					VERBOSE("    channel %2d: %7ld bytes, id=%2d %s\n",j,chlen,chid,chidstr);
 				}
 
 				fread(bm.sig,1,4,f);
@@ -621,7 +630,7 @@ int main(int argc,char *argv[]){
 		default:  help = 1; break;
 		}
 
-	if(help)
+	if(help || optind >= argc)
 		fprintf(stderr,"usage: %s [options] psdfile...\n\
   -h, --help         show this help\n\
   -v, --verbose      print more information\n\
@@ -664,21 +673,25 @@ int main(int argc,char *argv[]){
 			h.mode     = get2B(f);
 
 			if(!feof(f) && !memcmp(h.sig,"8BPS",4) && h.version == 1){
-
 				UNQUIET("  channels = %d, rows = %ld, cols = %ld, depth = %d, mode = %d (%s)\n",
 						h.channels, h.rows, h.cols, h.depth,
 						h.mode, h.mode >= 0 && h.mode < 16 ? mode_names[h.mode] : "???");
-
-				h.colormodepos = ftell(f);
-				skipblock(f,"color mode data");
-				doimageresources(f); //skipblock(f,"image resources");
-				dolayermaskinfo(f,&h); //skipblock(f,"layer & mask info");
-
-				// now process image data
-				base = strrchr(argv[i],DIRSEP);
-				doimage(f,NULL,base ? base+1 : argv[i],h.channels,h.rows,h.cols,&h);
-
-				UNQUIET("  done.\n\n");
+				
+				if(h.channels <= 0 || h.channels > 64 || h.rows <= 0 || 
+					 h.cols <= 0 || h.depth < 0 || h.depth > 32 || h.mode < 0)
+					alwayswarn("### something just isn't right about that header, giving up now.\n");
+				else{
+					h.colormodepos = ftell(f);
+					skipblock(f,"color mode data");
+					doimageresources(f); //skipblock(f,"image resources");
+					dolayermaskinfo(f,&h); //skipblock(f,"layer & mask info");
+	
+					// now process image data
+					base = strrchr(argv[i],DIRSEP);
+					doimage(f,NULL,base ? base+1 : argv[i],h.channels,h.rows,h.cols,&h);
+	
+					UNQUIET("  done.\n\n");
+				}
 			}else
 				alwayswarn("# \"%s\": couldn't read header, is not a PSD, or version is not 1!\n",argv[i]);
 
