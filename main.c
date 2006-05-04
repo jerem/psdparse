@@ -458,12 +458,18 @@ void dolayermaskinfo(FILE *f,struct psd_header *h){
 		if( (layerlen = get4B(f)) ){
 			// layers structure
 			nlayers = get2B(f);
-			if(nlayers<0){
+			if(nlayers < 0){
 				nlayers = -nlayers;
 				VERBOSE("  (first alpha is transparency for merged image)\n");
 				mergedalpha = 1;
 			}
 			UNQUIET("\n%d layers:\n",nlayers);
+			
+			if( nlayers*(18+6*h->channels) > layerlen ){ // sanity check
+				alwayswarn("### ridiculous number of layers, giving up.\n");
+				return;
+			}
+			
 			linfo = checkmalloc(nlayers*sizeof(struct layer_info));
 			lname = checkmalloc(nlayers*sizeof(char*));
 
@@ -475,12 +481,17 @@ void dolayermaskinfo(FILE *f,struct psd_header *h){
 				linfo[i].right = get4B(f);
 				linfo[i].channels = get2B(f);
 				
-				linfo[i].chlengths = checkmalloc(sizeof(long) * linfo[i].channels);
-
 				VERBOSE("\n");
 				UNQUIET("  layer %d: (%4ld,%4ld,%4ld,%4ld), %d channels (%4ld rows x %4ld cols)\n",
 						i, linfo[i].top, linfo[i].left, linfo[i].bottom, linfo[i].right, linfo[i].channels,
 						linfo[i].bottom-linfo[i].top, linfo[i].right-linfo[i].left);
+
+				if( linfo[i].bottom < linfo[i].top || linfo[i].right < linfo[i].left || linfo[i].channels > 64 ){ // sanity check
+					alwayswarn("### something's not right about that, giving up.\n");
+					return;
+				}
+
+				linfo[i].chlengths = checkmalloc(sizeof(long) * linfo[i].channels);
 	
 				for( j=0 ; j < linfo[i].channels ; ++j ){
 					chid = get2B(f);

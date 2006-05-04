@@ -174,7 +174,7 @@ void pngwriteimage(FILE *psd, int comp[], long **rowpos,
 				if(comp[ch] == RAWDATA){ /* uncompressed row */
 					n = fread(inrows[i],1,rb,psd);
 					if(n != rb){
-						alwayswarn("# error reading row data (raw) @ %ld\n",rowpos[ch][j]);
+						warn("error reading row data (raw) @ %ld",rowpos[ch][j]);
 						memset(inrows[i]+n,0,rb-n); // zero out the rest of the row
 					}
 				}
@@ -186,7 +186,7 @@ void pngwriteimage(FILE *psd, int comp[], long **rowpos,
 					}
 					rlebytes = fread(rledata,1,n,psd);
 					if(rlebytes < n){
-						alwayswarn("# error reading row data (RLE) @ %ld\n",rowpos[ch][j]);
+						warn("error reading row data (RLE) @ %ld",rowpos[ch][j]);
 						memset(inrows[i],0,rb); // zero it out, will probably unpack short
 					}
 					unpackbits(inrows[i],rledata,rb,rlebytes);
