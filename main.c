@@ -128,14 +128,14 @@ void warn(char *fmt,...){
 	char s[0x200];
 	va_list v;
 
-	if(nwarns == WARNLIMIT) fputs("# (further warnings suppressed)\n",stderr);
+	if(nwarns == WARNLIMIT) fputs("#   (further warnings suppressed)\n",stderr);
 	++nwarns;
 	if(nwarns <= WARNLIMIT){
 		va_start(v,fmt);
 		vsnprintf(s,0x200,fmt,v);
 		va_end(v);
 		fflush(stdout);
-		fprintf(stderr,"# warning: %s\n",s);
+		fprintf(stderr,"#   warning: %s\n",s);
 	}
 }
 
@@ -186,21 +186,33 @@ void dumprow(unsigned char *b,int n){
 	VERBOSE("\n");
 }
 
-int dochannel(FILE *f,struct layer_info *li,int idx,int channels,
-			  int rows,int cols,int depth,long **rowpos){
-	int j,k,ch,dumpit;
-	long pos;
+int dochannel(FILE *f, struct layer_info *li, int idx, int channels,
+			  int rows, int cols, int depth, long **rowpos){
+	int j,k,ch,dumpit,comp;
+	long pos,chpos = ftell(f);
 	unsigned char *rowbuf;
 	unsigned rb,n,*rlebuf = NULL;
 	static char *comptype[] = {"raw","RLE"};
+	long chlen = li ? li->chlengths[idx] : 0;
 
-	unsigned comp = get2B(f);
-	if(comp>RLECOMP){
-		warn("## bad compression type %d, can't process channel\n");
+	if(li)
+		alwayswarn(">>> dochannel %d/%d filepos=%7ld bytes=%7ld\n",idx,channels,chpos,li->chlengths[idx]);
+	else
+		alwayswarn(">>> dochannel %d/%d filepos=%7ld\n",idx,channels,chpos);
+
+	if(li && chlen < 2){
+		alwayswarn("## channel too short (%d bytes)\n",chlen);
+		if(chlen > 0)
+			fseek(f, chlen, SEEK_CUR); // skip it anyway, but not backwards
+	}
+
+	comp = get2B(f);
+	chlen -= 2;
+	if(comp < RAWDATA || comp > RLECOMP){
+		alwayswarn("## bad compression type %d, can't process channel\n",comp);
 		if(li){
-			long chlen = li->chlengths[idx];
-			warn("## skipping rest of channel data (%d bytes)",chlen-2);
-			fseek(f, chlen-2, SEEK_CUR);
+			alwayswarn("## skipping rest of channel data (%d bytes)\n",chlen);
+			fseek(f, chlen, SEEK_CUR);
 		}else 
 			fatal("## occurred in merged image, must abort\n");
 		return comp;
@@ -214,11 +226,15 @@ int dochannel(FILE *f,struct layer_info *li,int idx,int channels,
 	pos = ftell(f);
 
 	if(comp == RLECOMP){
-		pos += 2*channels*rows; /* image data starts after RLE counts */
+		int rlecounts = 2*channels*rows;
+		if(li && chlen < rlecounts)
+			alwayswarn("## channel too short for RLE row counts (need %d bytes, have %d bytes)\n",rlecounts,chlen);
+			
+		pos += rlecounts; /* image data starts after RLE counts */
 		rlebuf = checkmalloc(channels*rows*sizeof(unsigned));
 		/* accumulate RLE counts, to make array of row start positions */
-		for(ch=k=0;ch<channels;++ch){
-			for(j=0;j<rows && !feof(f);++j,++k){
+		for( ch = k = 0 ; ch < channels ; ++ch ){
+			for( j = 0 ; j < rows && !feof(f) ; ++j, ++k ){
 				rlebuf[k] = (unsigned short)get2B(f);
 				//printf("rowpos[%d][%3d]=%6d\n",ch,j,pos);
 				if(rowpos) rowpos[ch][j] = pos;
@@ -239,10 +255,11 @@ int dochannel(FILE *f,struct layer_info *li,int idx,int channels,
 	}
 
 	for(ch = k = 0 ; ch < channels ; ++ch){
+		alwayswarn(">>>   ... %d/%d, filepos= %ld\n",ch,channels,ftell(f));
 		
 		if(channels>1) VERBOSE("\n    channel %d:\n",ch);
 
-		for(j=0;j<rows;++j){
+		for( j = 0 ; j < rows ; ++j ){
 			if(rows > 3*CONTEXTROWS){
 				if(j==rows-CONTEXTROWS) 
 					VERBOSE("    ...%d rows not shown...\n",rows-2*CONTEXTROWS);
@@ -252,13 +269,14 @@ int dochannel(FILE *f,struct layer_info *li,int idx,int channels,
 
 			if(comp == RLECOMP){
 				n = rlebuf[k++];
-				if(n>2*rb){
-					warn("bad RLE count %d @ row %d",n,j);
+				//VERBOSE("rle count[%5d] = %5d\n",j,n);
+				if(n > 2*rb){
+					warn("bad RLE count %5d @ row %5d",n,j);
 					n = 2*rb;
 				}
 				if(fread(rowbuf,1,n,f) == n){
 					if(dumpit){
-						VERBOSE("    %4d: <%4d> ",j,n);
+						VERBOSE("   %5d: <%5d> ",j,n);
 						dumprow(rowbuf,n);
 					}
 				}else{
@@ -269,7 +287,7 @@ int dochannel(FILE *f,struct layer_info *li,int idx,int channels,
 			else if(comp == RAWDATA){
 				if(fread(rowbuf,1,rb,f) == rb){
 					if(dumpit){
-						VERBOSE("    %4d: ",j);
+						VERBOSE("   %5d: ",j);
 						dumprow(rowbuf,rb);
 					}
 				}else{
@@ -280,6 +298,11 @@ int dochannel(FILE *f,struct layer_info *li,int idx,int channels,
 
 		}
 
+	}
+	
+	if(ftell(f) != (chpos+2+chlen)){
+		alwayswarn(">>> currentpos = %ld, should be %ld !!\n",ftell(f),chpos+2+chlen);
+		fseek(f,chpos+2+chlen,SEEK_SET);
 	}
 
 	if(comp == RLECOMP) free(rlebuf);
@@ -296,7 +319,7 @@ void writechannels(FILE *f, char *dir, char *name, int chcomp[], long **rowpos,
 	int i,ch;
 	FILE *png;
 
-	for(i=0;i<channels;++i){
+	for( i = 0 ; i < channels ; ++i ){
 		// build PNG file name
 		strcpy(pngname,name);
 		ch = startchan + i - !alphalast;
@@ -312,14 +335,14 @@ void writechannels(FILE *f, char *dir, char *name, int chcomp[], long **rowpos,
 	}
 }
 
-void doimage(FILE *f,struct layer_info *li,char *name,int merged,int channels,
-			 int rows,int cols,struct psd_header *h){
+void doimage(FILE *f, struct layer_info *li, char *name,
+			 int channels, int rows, int cols, struct psd_header *h){
 	int ch,comp,startchan,pngchan,color_type,
 		*chcomp = checkmalloc(sizeof(int)*channels);
 	long **rowpos = checkmalloc(sizeof(long*)*channels);
 	FILE *png = NULL; /* handle to the output PNG file */
 
-	for(ch=0;ch<channels;++ch) 
+	for( ch = 0 ; ch < channels ; ++ch ) 
 		rowpos[ch] = checkmalloc(sizeof(long)*(rows+1));
 
 	pngchan = color_type = 0;
@@ -329,7 +352,7 @@ void doimage(FILE *f,struct layer_info *li,char *name,int merged,int channels,
 	case ModeGray16:
 	case ModeDuotone:
 	case ModeDuotone16:
-		if(channels == 1 || (merged && !mergedalpha)){
+		if(channels == 1 || (!li && !mergedalpha)){
 			color_type = PNG_COLOR_TYPE_GRAY;
 			pngchan = 1;
 		}
@@ -344,7 +367,7 @@ void doimage(FILE *f,struct layer_info *li,char *name,int merged,int channels,
 		break;
 	case ModeRGBColor:
 	case ModeRGB48:
-		if(channels == 3 || (merged && !mergedalpha)){
+		if(channels == 3 || (!li && !mergedalpha)){
 			color_type = PNG_COLOR_TYPE_RGB;
 			pngchan = 3;
 		}
@@ -355,7 +378,7 @@ void doimage(FILE *f,struct layer_info *li,char *name,int merged,int channels,
 		break;
 	}
 
-	if(merged){
+	if(!li){
 		VERBOSE("\n  merged channels:\n");
 		
 		// The 'merged' or 'composite' image is where the flattened image is stored
@@ -373,9 +396,10 @@ void doimage(FILE *f,struct layer_info *li,char *name,int merged,int channels,
 		
 		comp = dochannel(f,li,0/*no index*/,channels,rows,cols,h->depth,rowpos);
 		for( ch=0 ; ch < channels ; ++ch ) 
-			chcomp[ch] = comp; /* for all merged channels have same compression type */
+			chcomp[ch] = comp; /* merged channels share same compression type */
 		
 		if(writepng){
+			nwarns = 0;
 			startchan = 0;
 			if(pngchan && !splitchannels){
 				// recognisable PNG mode, so spit out the merged image
@@ -384,7 +408,7 @@ void doimage(FILE *f,struct layer_info *li,char *name,int merged,int channels,
 					pngwriteimage(f,chcomp,rowpos,0,pngchan,rows,cols,h->depth);
 				startchan += pngchan;
 			}
-			if(startchan<channels){
+			if(startchan < channels){
 				if(!pngchan)
 					UNQUIET("# writing %s image as split channels...\n",mode_names[h->mode]);
 				writechannels(f, pngdir, name, chcomp, rowpos, 
@@ -401,10 +425,11 @@ void doimage(FILE *f,struct layer_info *li,char *name,int merged,int channels,
 			chcomp[ch] = dochannel(f,li,ch,1/*count*/,rows,cols,h->depth,rowpos+ch);
 		}
 		if(writepng){
+			nwarns = 0;
 			if(pngchan){
 				if( (png = pngsetupwrite(f, pngdir, name, 
 										 cols, rows, channels, color_type, 1/*RGBA*/, h)) )
-					pngwriteimage(f,chcomp,rowpos,0,channels,rows,cols,h->depth);
+					pngwriteimage(f,chcomp,rowpos,0,pngchan,rows,cols,h->depth);
 			}else{
 				UNQUIET("# writing layer as split channels...\n");
 				writechannels(f, pngdir, name, chcomp, rowpos, 
@@ -438,11 +463,11 @@ void dolayermaskinfo(FILE *f,struct psd_header *h){
 				VERBOSE("  (first alpha is transparency for merged image)\n");
 				mergedalpha = 1;
 			}
-			UNQUIET("\n  layer info for %d layers:\n",nlayers);
+			UNQUIET("\n%d layers:\n",nlayers);
 			linfo = checkmalloc(nlayers*sizeof(struct layer_info));
 			lname = checkmalloc(nlayers*sizeof(char*));
 
-			for( i=0 ; i<nlayers ; ++i ){
+			for( i=0 ; i < nlayers ; ++i ){
 				// process layer record
 				linfo[i].top = get4B(f);
 				linfo[i].left = get4B(f);
@@ -460,7 +485,7 @@ void dolayermaskinfo(FILE *f,struct psd_header *h){
 				for( j=0 ; j < linfo[i].channels ; ++j ){
 					chid = get2B(f);
 					chlen = linfo[i].chlengths[j] = get4B(f);
-					VERBOSE("    channel %2d: id=%2d, %5ld bytes\n",j,chid,chlen);
+					VERBOSE("    channel %2d: id=%2d, %7ld bytes\n",j,chid,chlen);
 				}
 
 				fread(bm.sig,1,4,f);
@@ -497,7 +522,7 @@ void dolayermaskinfo(FILE *f,struct psd_header *h){
       
 			if(listfile) fputs("assetlist = {\n",listfile);
 				
-			for(i=0;i<nlayers;++i){
+			for( i = 0 ; i < nlayers ; ++i ){
 				long pixw = linfo[i].right-linfo[i].left,
 					 pixh = linfo[i].bottom-linfo[i].top;
 				VERBOSE("\n  layer %d (\"%s\"):\n",i,lname[i]);
@@ -506,8 +531,7 @@ void dolayermaskinfo(FILE *f,struct psd_header *h){
 					fprintf(listfile,"\t\"%s\" = { pos={%4ld,%4ld}, size={%4ld,%4ld} },\n",
 							lname[i], linfo[i].left, linfo[i].top, pixw, pixh);
 		
-				doimage(f, linfo+i, lname[i], 0/*not merged*/, linfo[i].channels, 
-						pixh, pixw, h);
+				doimage(f, linfo+i, lname[i], linfo[i].channels, pixh, pixw, h);
 			}
 
 			if(listfile) fputs("}\n",listfile);
@@ -531,7 +555,7 @@ char *finddesc(int id){
 	/* dumb linear lookup of description string from resource id */
 	/* assumes array ends with a NULL string pointer */
 	struct resdesc *p = rdesc;
-	if(id>=2000 && id<2999) return "path"; // special case
+	if(id >= 2000 && id < 2999) return "path"; // special case
 	while(p->str && p->id != id)
 		++p;
 	return p->str;
@@ -552,7 +576,8 @@ long doirb(FILE *f){
 
 	VERBOSE("  resource '%c%c%c%c' (%5d,\"%s\"):%5ld bytes",
 			type[0],type[1],type[2],type[3],id,name,size);
-	if( (d = finddesc(id)) ) VERBOSE(" [%s]",d);
+	if( (d = finddesc(id)) ) 
+		VERBOSE(" [%s]",d);
 	VERBOSE("\n");
 
 	return 4+2+PAD2(1+namelen)+4+PAD2(size); /* returns total bytes in block */
@@ -560,6 +585,7 @@ long doirb(FILE *f){
 
 void doimageresources(FILE *f){
 	long len = get4B(f);
+	VERBOSE("\nImage resources (%ld bytes):\n",len);
 	while(len>0)
 		len -= doirb(f);
 	if(len != 0) warn("image resources overran expected size by %d bytes\n",-len);
@@ -650,7 +676,7 @@ int main(int argc,char *argv[]){
 
 				// now process image data
 				base = strrchr(argv[i],DIRSEP);
-				doimage(f,NULL,base ? base+1 : argv[i],1/*merged*/,h.channels,h.rows,h.cols,&h);
+				doimage(f,NULL,base ? base+1 : argv[i],h.channels,h.rows,h.cols,&h);
 
 				UNQUIET("  done.\n\n");
 			}else
