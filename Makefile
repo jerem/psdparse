@@ -43,7 +43,7 @@ MINGW_AR      = i386-mingw32msvc-ar
 MINGW_RANLIB  = i386-mingw32msvc-ranlib
 MINGW_WINDRES = i386-mingw32msvc-windres
 
-CFLAGS   += -W -Wall -O2
+CFLAGS   += -W -Wall -O2 -g
 CPPFLAGS += -DDEFAULT_VERBOSE=0
 
 SRC    = main.c writepng.c unpackbits.c constants.c

@@ -128,7 +128,7 @@ void doimageresources(FILE *f);
 FILE* pngsetupwrite(FILE *psd, char *dir, char *name, int width, int height, 
 					int channels, int color_type, struct psd_header *h);
 void pngwriteimage(FILE *psd, int comp[], struct layer_info *li, long **rowpos,
-				   int startchan, int pngchan, int rows, int cols, int depth);
+				   int startchan, int pngchan, int rows, int cols, struct psd_header *h);
 
 int unpackbits(unsigned char *outp,unsigned char *inp,int rowbytes,int inlen);
 

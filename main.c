@@ -122,14 +122,15 @@ void dumprow(unsigned char *b,int n){
 int dochannel(FILE *f, struct layer_info *li, int idx, int channels,
 			  int rows, int cols, int depth, long **rowpos){
 	int j,k,ch,dumpit,comp;
-	long pos,chpos = ftell(f);
+	long pos,chpos = ftell(f),chlen = 0;
 	unsigned char *rowbuf;
 	unsigned count,last,rb,n,*rlebuf = NULL;
 	static char *comptype[] = {"raw","RLE"};
-	long chlen = li ? li->chlengths[idx] : 0;
 
 	if(li){
-		VERBOSE(">>> dochannel %d/%d filepos=%7ld bytes=%7ld\n",idx,channels,chpos,li->chlengths[idx]);
+		chlen = li->chlengths[idx];
+		VERBOSE(">>> dochannel %d/%d filepos=%7ld bytes=%7ld\n",
+					  idx,channels,chpos,chlen);
 	}else{
 		VERBOSE(">>> dochannel %d/%d filepos=%7ld\n",idx,channels,chpos);
 	}
@@ -148,20 +149,22 @@ int dochannel(FILE *f, struct layer_info *li, int idx, int channels,
 			li->mask.top,li->mask.left,li->mask.bottom,li->mask.right,rows,cols);
 	}
 
+	rb = (cols*depth + 7)/8;
+
 	comp = get2B(f);
 	chlen -= 2;
 	if(comp < RAWDATA || comp > RLECOMP){
-		alwayswarn("## bad compression type %d, can't process channel\n",comp);
-		if(li){
-			alwayswarn("## skipping rest of channel data (%d bytes)\n",chlen);
+		alwayswarn("## bad compression type %d\n",comp);
+		if(li){ // make a guess based on channel byte count
+			comp = chlen == rows*rb ? RAWDATA : RLECOMP;
+			alwayswarn("## guessing: %s\n",comptype[comp]);
+		}else{
+			alwayswarn("## skipping channel (%d bytes)\n",chlen);
 			fseek(f, chlen, SEEK_CUR);
-		}else 
-			fatal("## occurred in merged image, must abort\n");
-		return comp;
-	}
-	VERBOSE("    compression = %d (%s)\n",comp,comptype[comp]);
-
-	rb = (cols*depth + 7)/8;
+			return -1;
+		}
+	}else
+		VERBOSE("    compression = %d (%s)\n",comp,comptype[comp]);
 	VERBOSE("    uncompressed size %ld bytes (row bytes = %d)\n",(long)channels*rows*rb,rb);
 
 	rowbuf = checkmalloc(rb*2); /* slop for worst case RLE overhead (usually (rb/127+1) ) */
@@ -283,8 +286,10 @@ void writechannels(FILE *f, char *dir, char *name, int chcomp[],
 		else
 			sprintf(pngname+strlen(pngname),".%d",ch);
 			
-		if( (png = pngsetupwrite(f,dir,pngname,cols,rows,1,PNG_COLOR_TYPE_GRAY,h)) )
-			pngwriteimage(f,chcomp,li,rowpos,startchan+i,1,rows,cols,h->depth);
+		if(chcomp[i] == -1)
+			alwayswarn("## not writing \"%s\", bad channel compression type\n",pngname);
+		else if( (png = pngsetupwrite(f,dir,pngname,cols,rows,1,PNG_COLOR_TYPE_GRAY,h)) )
+			pngwriteimage(f,chcomp,li,rowpos,startchan+i,1,rows,cols,h);
 	}
 }
 
@@ -358,7 +363,7 @@ void doimage(FILE *f, struct layer_info *li, char *name,
 				// recognisable PNG mode, so spit out the merged image
 				if( (png = pngsetupwrite(f, pngdir, name, 
 										 cols, rows, pngchan, color_type, h)) )
-					pngwriteimage(f,chcomp,NULL,rowpos,0,pngchan,rows,cols,h->depth);
+					pngwriteimage(f,chcomp,NULL,rowpos,0,pngchan,rows,cols,h);
 				startchan += pngchan;
 			}
 			if(startchan < channels){
@@ -382,7 +387,7 @@ void doimage(FILE *f, struct layer_info *li, char *name,
 			if(pngchan && !splitchannels){
 				if( (png = pngsetupwrite(f, pngdir, name, 
 										 cols, rows, pngchan, color_type, h)) )
-					pngwriteimage(f,chcomp,li,rowpos,0,pngchan,rows,cols,h->depth);
+					pngwriteimage(f,chcomp,li,rowpos,0,pngchan,rows,cols,h);
 					// spit out any 'extra' channels (e.g. layer transparency)
 					for( ch = 0 ; ch < channels ; ++ch )
 						if(li->chid[ch] < -1 || li->chid[ch] > pngchan)
@@ -445,86 +450,88 @@ void dolayermaskinfo(FILE *f,struct psd_header *h){
 						linfo[i].bottom-linfo[i].top, linfo[i].right-linfo[i].left);
 
 				if( linfo[i].bottom < linfo[i].top || linfo[i].right < linfo[i].left || linfo[i].channels > 64 ){ // sanity check
-					alwayswarn("### something's not right about that, giving up.\n");
-					return;
-				}
+					alwayswarn("### something's not right about that, trying to skip layer.\n");
+					fseek(f,6*linfo[i].channels+12,SEEK_CUR);
+					skipblock(f,"layer info: extra data");
+				}else{
 
-				linfo[i].chlengths = checkmalloc(linfo[i].channels*sizeof(long));
-				linfo[i].chid = checkmalloc(linfo[i].channels*sizeof(int));
-				linfo[i].chindex = checkmalloc((linfo[i].channels+2)*sizeof(int));
-				linfo[i].chindex += 2; // so we can index array from [-2] (hackish)
-				
-				for( j = -2 ; j < linfo[i].channels ; ++j )
-					linfo[i].chindex[j] = -1;
-	
-				for( j=0 ; j < linfo[i].channels ; ++j ){
-					chid = linfo[i].chid[j] = get2B(f);
-					chlen = linfo[i].chlengths[j] = get4B(f);
+					linfo[i].chlengths = checkmalloc(linfo[i].channels*sizeof(long));
+					linfo[i].chid = checkmalloc(linfo[i].channels*sizeof(int));
+					linfo[i].chindex = checkmalloc((linfo[i].channels+2)*sizeof(int));
+					linfo[i].chindex += 2; // so we can index array from [-2] (hackish)
 					
-					if(chid >= -2 && chid < linfo[i].channels)
-						linfo[i].chindex[chid] = j;
-					else
-						warn("unexpected channel id %d",chid);
+					for( j = -2 ; j < linfo[i].channels ; ++j )
+						linfo[i].chindex[j] = -1;
+		
+					for( j=0 ; j < linfo[i].channels ; ++j ){
+						chid = linfo[i].chid[j] = get2B(f);
+						chlen = linfo[i].chlengths[j] = get4B(f);
 						
-					switch(chid){
-					case -2: chidstr = " (layer mask)"; break;
-					case -1: chidstr = " (transparency mask)"; break;
-					default:
-						if(chid < strlen(channelsuffixes[h->mode]))
-							sprintf(chidstr = tmp, " (%c)", channelsuffixes[h->mode][chid]); // it's a mode-ish channel
+						if(chid >= -2 && chid < linfo[i].channels)
+							linfo[i].chindex[chid] = j;
 						else
-							chidstr = ""; // can't explain it
+							warn("unexpected channel id %d",chid);
+							
+						switch(chid){
+						case -2: chidstr = " (layer mask)"; break;
+						case -1: chidstr = " (transparency mask)"; break;
+						default:
+							if(chid < strlen(channelsuffixes[h->mode]))
+								sprintf(chidstr = tmp, " (%c)", channelsuffixes[h->mode][chid]); // it's a mode-ish channel
+							else
+								chidstr = ""; // can't explain it
+						}
+						VERBOSE("    channel %2d: %7ld bytes, id=%2d %s\n",j,chlen,chid,chidstr);
 					}
-					VERBOSE("    channel %2d: %7ld bytes, id=%2d %s\n",j,chlen,chid,chidstr);
+	
+					fread(bm.sig,1,4,f);
+					fread(bm.key,1,4,f);
+					bm.opacity = fgetc(f);
+					bm.clipping = fgetc(f);
+					bm.flags = fgetc(f);
+					bm.filler = fgetc(f);
+					VERBOSE("  blending mode: sig='%c%c%c%c' key='%c%c%c%c' opacity=%d(%d%%) clipping=%d(%s)\n\
+	    flags=%#x(transp_prot%s visible%s bit4valid%s pixel_data_relevant%s)\n",
+							bm.sig[0],bm.sig[1],bm.sig[2],bm.sig[3],
+							bm.key[0],bm.key[1],bm.key[2],bm.key[3],
+							bm.opacity,(bm.opacity*100+127)/255,
+							bm.clipping,bm.clipping ? "non-base" : "base",
+							bm.flags, BITSTR(bm.flags&1),BITSTR(bm.flags&2),BITSTR(bm.flags&8),BITSTR(bm.flags&16) );
+	
+					//skipblock(f,"layer info: extra data");
+					extralen = get4B(f);
+					extrastart = ftell(f);
+					//printf("  (extra data: %d bytes @ %d)\n",extralen,extrastart);
+	
+					// layer mask data
+					if( (linfo[i].mask.size = get4B(f)) ){
+						linfo[i].mask.top = get4B(f);
+						linfo[i].mask.left = get4B(f);
+						linfo[i].mask.bottom = get4B(f);
+						linfo[i].mask.right = get4B(f);
+						linfo[i].mask.default_colour = fgetc(f);
+						linfo[i].mask.flags = fgetc(f);
+						fseek(f,linfo[i].mask.size-18,SEEK_CUR); // skip remainder
+						linfo[i].mask.rows = linfo[i].mask.bottom - linfo[i].mask.top;
+						linfo[i].mask.cols = linfo[i].mask.right - linfo[i].mask.left;
+					}
+			
+					skipblock(f,"layer blending ranges");
+					
+					// layer name
+					namelen = fgetc(f);
+					lname[i] = checkmalloc(PAD4(1+namelen)+16);
+					fread(lname[i],1,PAD4(1+namelen),f);
+					if(namelen){
+						lname[i][namelen] = 0;
+						UNQUIET("    name: \"%s\"\n",lname[i]);
+						if(lname[i][0] == '.')
+							lname[i][0] = '_';
+					}else
+						sprintf(lname[i],"layer%d",i);
+			
+					fseek(f,extrastart+extralen,SEEK_SET); // skip over any extra data
 				}
-
-				fread(bm.sig,1,4,f);
-				fread(bm.key,1,4,f);
-				bm.opacity = fgetc(f);
-				bm.clipping = fgetc(f);
-				bm.flags = fgetc(f);
-				bm.filler = fgetc(f);
-				VERBOSE("  blending mode: sig='%c%c%c%c' key='%c%c%c%c' opacity=%d(%d%%) clipping=%d(%s)\n\
-    flags=%#x(transp_prot%s visible%s bit4valid%s pixel_data_relevant%s)\n",
-						bm.sig[0],bm.sig[1],bm.sig[2],bm.sig[3],
-						bm.key[0],bm.key[1],bm.key[2],bm.key[3],
-						bm.opacity,(bm.opacity*100+127)/255,
-						bm.clipping,bm.clipping ? "non-base" : "base",
-						bm.flags, BITSTR(bm.flags&1),BITSTR(bm.flags&2),BITSTR(bm.flags&8),BITSTR(bm.flags&16) );
-
-				//skipblock(f,"layer info: extra data");
-				extralen = get4B(f);
-				extrastart = ftell(f);
-				//printf("  (extra data: %d bytes @ %d)\n",extralen,extrastart);
-
-				// layer mask data
-				if( (linfo[i].mask.size = get4B(f)) ){
-					linfo[i].mask.top = get4B(f);
-					linfo[i].mask.left = get4B(f);
-					linfo[i].mask.bottom = get4B(f);
-					linfo[i].mask.right = get4B(f);
-					linfo[i].mask.default_colour = fgetc(f);
-					linfo[i].mask.flags = fgetc(f);
-					fseek(f,linfo[i].mask.size-18,SEEK_CUR); // skip remainder
-					linfo[i].mask.rows = linfo[i].mask.bottom - linfo[i].mask.top;
-					linfo[i].mask.cols = linfo[i].mask.right - linfo[i].mask.left;
-				}
-		
-				skipblock(f,"layer blending ranges");
-				
-				// layer name
-				namelen = fgetc(f);
-				lname[i] = checkmalloc(PAD4(1+namelen)+16);
-				fread(lname[i],1,PAD4(1+namelen),f);
-				if(namelen){
-					lname[i][namelen] = 0;
-					UNQUIET("    name: \"%s\"\n",lname[i]);
-					if(lname[i][0] == '.')
-						lname[i][0] = '_';
-				}else
-					sprintf(lname[i],"layer%d",i);
-		
-				fseek(f,extrastart+extralen,SEEK_SET); // skip over any extra data
 			}
       
 			if(listfile) fputs("assetlist = {\n",listfile);

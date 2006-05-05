@@ -137,10 +137,10 @@ FILE* pngsetupwrite(FILE *psd, char *dir, char *name, int width, int height,
 	return f;
 }
 
-void pngwriteimage(FILE *psd, int comp[], struct layer_info *li, long **rowpos,
-				   int startchan, int pngchan, int rows, int cols, int depth){
+void pngwriteimage(FILE *psd, int chcomp[], struct layer_info *li, long **rowpos,
+				   int startchan, int pngchan, int rows, int cols, struct psd_header *h){
 	int i,j,ch;
-	unsigned n,rb = (depth*cols+7)/8,rlebytes;
+	unsigned n,rb = (h->depth*cols+7)/8,rlebytes;
 	unsigned char *rowbuf,*inrows[4],*rledata,*p;
 	short *q;
 	long savepos = ftell(psd);
@@ -186,19 +186,22 @@ void pngwriteimage(FILE *psd, int comp[], struct layer_info *li, long **rowpos,
 			/* get row data */
 			//printf("rowpos[%d][%4d] = %7d\n",ch,j,rowpos[ch][j]);
 
-			if(fseek(psd,rowpos[ch][j],SEEK_SET) == -1){
+			if(map[i] < 0 || map[i] > (li ? li->channels : h->channels)){
+				warn("bad map[%d]=%d, skipping a channel",i,map[i]);
+				memset(inrows[i],0,rb); // zero out the row
+			}else if(fseek(psd,rowpos[ch][j],SEEK_SET) == -1){
 				alwayswarn("# error seeking to %ld\n",rowpos[ch][j]);
 				memset(inrows[i],0,rb); // zero out the row
 			}else{
 
-				if(comp[ch] == RAWDATA){ /* uncompressed row */
+				if(chcomp[ch] == RAWDATA){ /* uncompressed row */
 					n = fread(inrows[i],1,rb,psd);
 					if(n != rb){
 						warn("error reading row data (raw) @ %ld",rowpos[ch][j]);
 						memset(inrows[i]+n,0,rb-n); // zero out the rest of the row
 					}
 				}
-				else{ /* RLE compressed row */
+				else if(chcomp[ch] == RLECOMP){ /* RLE compressed row */
 					n = rowpos[ch][j+1] - rowpos[ch][j];
 					if(n > 2*rb){
 						n = 2*rb; // sanity check
@@ -210,14 +213,15 @@ void pngwriteimage(FILE *psd, int comp[], struct layer_info *li, long **rowpos,
 						memset(inrows[i],0,rb); // zero it out, will probably unpack short
 					}
 					unpackbits(inrows[i],rledata,rb,rlebytes);
-				}
+				}else // assume it is bad
+					memset(inrows[i],0,rb);
 
 			}
 		}
 
 		if(pngchan>1){ /* interleave channels */
 			
-			if(depth == 8)
+			if(h->depth == 8)
 				for( i = 0, p = rowbuf ; i < rb ; ++i )
 					for( ch = 0 ; ch < pngchan ; ++ch )
 						*p++ = inrows[ch][i];
