@@ -15,12 +15,13 @@ MODENAMES = [
     ]
 
 """@todo docstring"""
-CHANNELSUFFIXES = [
-	"", "", "", "RGB",
-	"CMYK", "HSL", "HSB", "",
-	"", "Lab", "", "RGB",
-	"Lab", "CMYK", "", ""
-    ]
+CHANNELSUFFIXES = {
+    -2:"layer mask", -1:"transparancy mask",
+    3:"RGB",
+    4:"CMYK", 5:"HSL", 6:"HSB", 
+    9:"Lab", 11:"RGB",
+    12:"Lab", 13:"CMYK",
+    }
 
 """resource id descriptions"""
 RDESC = {
