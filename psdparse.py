@@ -1,8 +1,10 @@
 #!/usr/bin/env python
 # using some python 2.5 features.
 
-import sys
+import sys, os, os.path
 from struct import unpack, calcsize
+
+import PIL.Image as PilImage
 
 from psddata import *
 
@@ -10,14 +12,19 @@ from psddata import *
 # Helpers
 
 def progress(msg):
-    print >>sys.stderr, msg
+    global OPTS
+    if not OPTS.quiet:
+        print >>sys.stderr, msg
 
 def verbose(msg):
-    if 0:
+    global OPTS
+    if OPTS.very_verbose:
         print >>sys.stderr, "  #", msg
 
 def info(msg):
-    print >>sys.stderr, msg
+    global OPTS
+    if OPTS.verbose:
+        print >>sys.stderr, msg
 
 def warn(msg):
     print >>sys.stderr, "Warning:", msg
@@ -39,6 +46,12 @@ def readf(f, format):
     """read a strct from file structure according to format"""
     return unpack(format, f.read(calcsize(format)))
 
+def make_filename(fn_stub, ext):
+    global OPTS
+    fn = os.path.join(OPTS.output_dir2, OPTS.file_prefix, fn_stub+"."+ext)
+    verbose("  filename: '%s'" % fn)
+    return fn
+
 
 ######################################################################
 # Main
@@ -47,10 +60,11 @@ def skipblock(f, desc):
     (n,) = readf(f, ">L") # (n,) is a 1-tuple.
     if n:
         f.seek(n, 1) # 1: relative
-    progress("Skipped %s with %s bytes" %(desc, n))
+    info("Skipped %s with %s bytes" %(desc, n))
         
 def doirb(f):
     """return total bytes in block"""
+    global OPTS
     r = Any()
     r.at = f.tell()
     (r.type, r.id, r.namelen) = readf(f, ">4s H B")
@@ -62,10 +76,11 @@ def doirb(f):
     f.seek(PAD2(r.size), 1) # 1: relative
     r.rdesc = "[%s]" % RDESC.get(r.id, "?")
     verbose("Resource: %s" % r)
-    info((" 0x%(at)06x| type:%(type)s, id:%(id)5d, "
-          "size:0x%(size)04x %(rdesc)s "
-          "'%(short)s'"
-          ) % r.__dict__)
+    if OPTS.list_irb:
+        progress((" 0x%(at)06x| type:%(type)s, id:%(id)5d, "
+                  "size:0x%(size)04x %(rdesc)s "
+                  "'%(short)s'"
+                  ) % r.__dict__)
     return 4+2+PAD2(1+r.namelen)+4+PAD2(r.size)
     
 
@@ -77,18 +92,87 @@ def doimageresources(f):
     if n != 0:
         warn("Image resources overran expected size by %d bytes" % (-n))
 
+
+def dochannel(f, li, idx, count, rows, cols, depth):
+    """params:
+    f -- open psd file file, read pointer on data
+    li -- layer info struct
+    idx -- channel number
+    count -- number of channels to process ???
+    rows, cols -- dimensions
+    depth -- bits
+    """
+    chlen = li.chlengths[idx]
+    if chlen is not None  and  chlen < 2:
+        raise "not enough channel data: %s" % chlen
+    if li.chids[idx] == -2:
+        rows, cols = li.mask.rows, li.mask.cols
+    rb = (cols*depth+7) / 8 # round to next byte
+    # channel header
+    chpos = f.tell()
+    (comp,) = readf(f, ">H")
+    if chlen:
+        chlen -= 2
+    if comp == Compressions.Raw:
+        verbose("handling raw uncompressed data")
+    elif comp == Compressions.RLE:
+        verbose("handling RLE compressed data")
+    else:
+        raise "## bad compression type: %s" % comp
+        # TODO: maybe just skip channel...:
+        #   f.seek(chlen, SEEK_CUR)
+        #   return
+    pos = f.tell()
+    if comp == Compressions.RLE:
+        rlecounts = 2 * count * rows
+        if chlen and chlen < rlecounts:
+            raise "channel too short for RLE row counts (need %d bytes, have %d bytes)" % (rlecounts,chlen)
+        pos += rlecounts # image data starts after RLE counts
+        rlecounts_data = readf(f, ">%dH" % (count*rows) )
+        for ch in range(count):
+            # read rle data
+            rlelen_for_channel = sum(rlecounts_data[ch*rows:(ch+1)*rows])
+            data = f.read(rlelen_for_channel)
+            p = PilImage.fromstring("L", (cols,rows), data, "packbits", "L" )
+            fn = make_filename("%s_%02d" % (li.fname, li.chids[idx+ch]), "png")
+            p.save(fn)
+            progress("  saved as: %s" % fn)
+            del p        
+    elif comp == Compressions.Raw:
+        raise "Compressions.Raw nyi"
+    else:
+        raise "program flow error"
+
+    if (chlen is not None) and (f.tell() != chpos+2+chlen):
+        warn("currentpos:%d should be:%d!" % (f.tell(), chpos+2+chlen))
+        f.seek(chpos+2+chlen, 0) # 0: SEEK_SET
+
+    return
+    
+    
         
-def doimage(f, li, h):
-    name = li.fname  # filname stub
-    channels = li.channels
-    rows = li.rows
-    cols = li.cols
-    pass
+def doimage(f, li, h, isLayer=True):
+    progress("Image: %s/%d" % (li.fname, li.channels))
+    # channels
+    if isLayer:
+        for ch in range(li.channels):
+            dochannel(f, li, ch, 1, li.rows, li.cols, h.depth)
+    else:
+        dochannel(f, li, 0, li.channels, li.rows, li.cols, h.depth) 
+    return
+    if 0:
+        if h.mode in [ Modes.Bitmap, Modes.GrayScale, Modes.Gray16, Modes.Duotone, Modes.Duotone16 ]:
+            info("  handle 1 channel")
+        elif h.mode in [ Modes.IndexedColor ]:
+            raise "Can not handle indexed color, yet."
+        elif h.mode in [ Modes.RBGColor, Modes.RBGColor48 ]:
+            info("  handle multi channels")
+
 
 
 def dolayermaskinfo(f, h):
     progress("Layers & Masks...")
-    mergedalpha = False
+    h.mergedalpha = False
     (misclen,) = readf(f, ">L")
     if misclen:
         miscstart = f.tell()        
@@ -100,7 +184,7 @@ def dolayermaskinfo(f, h):
             if nlayers<0:
                 nlayers = -nlayers
                 verbose("  (first alpha is transparency for merged image)")
-                mergedalpha = True
+                h.mergedalpha = True
             info("  layer info for %d layers:" % nlayers)
             if nlayers*(18+6*h.channels) > layerlen:
                 raise ValueError("Unlikely number of %s layers for %s channels with %s layerlen. Giving up." %
@@ -183,7 +267,7 @@ def dolayermaskinfo(f, h):
                 # layer name
                 (l.namelen,) = readf(f,">B")
                 # - "-1": one byte traling 0byte. "-1": one byte garble.
-                l.name = readf(f, ">%ds" % (PAD4(1+l.namelen)-2) ) 
+                (l.name,) = readf(f, ">%ds" % (PAD4(1+l.namelen)-2) ) 
                 #@todo: handle filename-harming names here?
                 l.fname = l.name
                 info("    name: '%s'" % l.name);                    
@@ -192,7 +276,7 @@ def dolayermaskinfo(f, h):
                 f.seek(extrastart + extralen, 0) # 0: SEEK_SET
 
             for i in range(nlayers):
-                doimage(f, l, h)
+                doimage(f, linfo[i], h, isLayer=True)
 
         else:
             info("  (layer info section is empty)")
@@ -207,6 +291,19 @@ def dolayermaskinfo(f, h):
    
     
 def main(fn):
+    # create dir
+    if not OPTS.output_dir:
+        OPTS.output_dir2 = os.path.splitext(fn)[0]
+    else:
+        OPTS.output_dir2 = OPTS.output_dir
+    if os.path.exists(OPTS.output_dir2):
+        if os.path.isdir(OPTS.output_dir2):
+            pass
+        else:
+            raise "there exists a non-dir '%s'" % OPTS.output_dir2
+    else:
+        os.makedirs(os.path.abspath(OPTS.output_dir2)) # raises on arror
+    # go
     progress("Opening '%s'..." % fn)
     f = open(fn, "rb")
     try:
@@ -232,8 +329,12 @@ def main(fn):
         # and more data
         dolayermaskinfo(f,h) # //skipblock(f,"layer & mask info");
         # now process image data
-        #base = strrchr(argv[i],DIRSEP);
-        #doimage(f,base ? base+1 : argv[i],1/*merged*/,h.channels,h.rows,h.cols,&h);
+        li = Any()
+        li.chids = range(h.channels)
+        li.chlengths = [ None ] * h.channels # dummy data
+        (li.fname, li.channels, li.rows, li.cols) = (
+            "merged", h.channels, h.rows, h.cols)
+        doimage(f, li, h, isLayer=False)
     finally:
         f.close()
 
@@ -241,10 +342,41 @@ def main(fn):
 def cyg_to_win(cyg_fn):
     return cyg_fn.replace("/d/", "D:/")
 
+
 if __name__ == "__main__":
-    if len(sys.argv) == 1:  # exec with C-c C-c in emacs
-        main(r'd:\foto\psdparse\ErrCheck3.psd')
-    else:
-        for fn in map(cyg_to_win, sys.argv[1:]):
-            main(fn)
+    #
+    # parse OPTS
+    #
+    from optparse import OptionParser
+    parser = OptionParser(usage = "usage: %prog [OPTS] PSDFILE.psd")
+    po = parser.add_option
+    po("-D","--demo", type="int", default=None,
+       help="Run as demo with predefined paremter set")
+    po("-V","--very-verbose", default=False, action="store_true")
+    po("-v","--verbose", default=False, action="store_true")
+    po("-q","--quiet", default=False, action="store_true")
+    po("-I","--list-irb", default=False, action="store_true",
+       help="List image resource block content")
+    po("-d","--output-dir", default="",
+       help="override 'psdfile/' as output location")
+    po("-p","--file-prefix", default="",
+       help="prefix string inside in output-dir for all created files")
+    (OPTS, args) = parser.parse_args()
+    #
+    # some opt preprocessing
+    #
+    if len(args) == 0:
+        if 0:
+            parser.print_help()
+            sys.exit(-1)
+        else: # exec with C-c C-c in emacs
+            args = [ r'd:\foto\psdparse\ErrCheck3a.psd' ]        
+    if OPTS.output_dir and len(args) != 1:
+        print "can only use --output-dir option with one psdfile"
+        sys.exit(-1)
+    #
+    # run
+    #
+    for fn in map(cyg_to_win, args):
+        main(fn)
         

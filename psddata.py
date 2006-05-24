@@ -4,6 +4,8 @@ __all__ = [
     "MODENAMES",
     "CHANNELSUFFIXES",
     "RDESC",
+    "Modes",
+    "Compressions",
     ]
     
 """header mode field meanings"""
@@ -78,4 +80,26 @@ RDESC = {
 	10000:"Print flags info",
     }
 
+class Modes:
+    Bitmap       =  0
+    GrayScale    =  1
+    IndexedColor =  2
+    RGBColor     =  3
+    CMYKColor    =  4
+    HSLColor     =  5
+    HSBColor     =  6
+    Multichannel =  7
+    Duotone      =  8
+    LabColor     =  9
+    Gray16       = 10
+    RGB48        = 11
+    Lab48        = 12
+    CMYK64       = 13
+    DeepMultichannel = 14
+    Duotone16    = 15
+
+class Compressions:
+    Raw = 0
+    RLE = 1
+    
 # eof
