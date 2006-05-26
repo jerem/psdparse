@@ -1,12 +1,15 @@
 #!/usr/bin/env python
 # using some python 2.5 features.
 
+# standard
 import sys, os, os.path
+from stat import *
 from struct import unpack, calcsize
-
+# PIL
 import PIL.Image as PilImage
-
+# own
 from psddata import *
+from lossify import getLossifier
 
 ######################################################################
 # Helpers
@@ -124,6 +127,7 @@ def dochannel(f, li, idx, count, rows, cols, depth):
         #   return
     pos = f.tell()
     if comp == Compressions.RLE:
+        lossifier = getLossifier(OPTS)
         rlecounts = 2 * count * rows
         if chlen and chlen < rlecounts:
             raise "channel too short for RLE row counts (need %d bytes, have %d bytes)" % (rlecounts,chlen)
@@ -134,10 +138,35 @@ def dochannel(f, li, idx, count, rows, cols, depth):
             rlelen_for_channel = sum(rlecounts_data[ch*rows:(ch+1)*rows])
             data = f.read(rlelen_for_channel)
             p = PilImage.fromstring("L", (cols,rows), data, "packbits", "L" )
-            fn = make_filename("%s_%02d" % (li.fname, li.chids[idx+ch]), "png")
-            p.save(fn)
-            progress("  saved as: %s" % fn)
-            del p        
+            fn_orig = make_filename("%s_%02d" % (li.fname, li.chids[idx+ch]), "png")
+            p.save(fn_orig)
+            sz_orig = os.stat(fn_orig)[ST_SIZE]
+            progress("       saved (%5dk): %s" % (sz_orig/1024, fn_orig))
+            del p
+            if OPTS.presets_compare:
+                for preset in range(10):
+                    fn_lossy = lossifier.lossify(fn_orig, preset, suffix="-%d"%preset)
+                    sz_lossy = os.stat(fn_lossy)[ST_SIZE]
+                    progress("   lossified (%5dk): %s" % (sz_lossy/1024, fn_lossy))
+                    if sz_lossy < 50:
+                        raise "Lossified file to small: %d bytes" % sz_lossy
+            else:
+                _preset = OPTS.preset
+                if li.layernum == 0: # bg layer
+                    if li.chids[idx+ch] >= 0: # real channel, not mask or transparency
+                        _preset = OPTS.preset_bgchannel
+                fn_lossy = lossifier.lossify(fn_orig, _preset)
+                sz_lossy = os.stat(fn_lossy)[ST_SIZE]
+                progress("   lossified (%5dk): %s" % (sz_lossy/1024, fn_lossy))
+                if sz_lossy < 50:
+                    raise "Lossified file to small: %d bytes" % sz_lossy
+                if OPTS.safe:
+                    # TODO: verify quality of lossy file
+                    pass
+                
+            os.remove(fn_orig)
+            progress("     removed  %5s  : %s" % ("",fn_orig))
+            raise "TEST"
     elif comp == Compressions.Raw:
         raise "Compressions.Raw nyi"
     else:
@@ -160,14 +189,6 @@ def doimage(f, li, h, isLayer=True):
     else:
         dochannel(f, li, 0, li.channels, li.rows, li.cols, h.depth) 
     return
-    if 0:
-        if h.mode in [ Modes.Bitmap, Modes.GrayScale, Modes.Gray16, Modes.Duotone, Modes.Duotone16 ]:
-            info("  handle 1 channel")
-        elif h.mode in [ Modes.IndexedColor ]:
-            raise "Can not handle indexed color, yet."
-        elif h.mode in [ Modes.RBGColor, Modes.RBGColor48 ]:
-            info("  handle multi channels")
-
 
 
 def dolayermaskinfo(f, h):
@@ -276,6 +297,7 @@ def dolayermaskinfo(f, h):
                 f.seek(extrastart + extralen, 0) # 0: SEEK_SET
 
             for i in range(nlayers):
+                linfo[i].layernum = i
                 doimage(f, linfo[i], h, isLayer=True)
 
         else:
@@ -334,6 +356,7 @@ def main(fn):
         li.chlengths = [ None ] * h.channels # dummy data
         (li.fname, li.channels, li.rows, li.cols) = (
             "merged", h.channels, h.rows, h.cols)
+        li.layernum = -1
         doimage(f, li, h, isLayer=False)
     finally:
         f.close()
@@ -350,17 +373,37 @@ if __name__ == "__main__":
     from optparse import OptionParser
     parser = OptionParser(usage = "usage: %prog [OPTS] PSDFILE.psd")
     po = parser.add_option
+    # verbosity, demos, etc
     po("-D","--demo", type="int", default=None,
        help="Run as demo with predefined paremter set")
     po("-V","--very-verbose", default=False, action="store_true")
     po("-v","--verbose", default=False, action="store_true")
-    po("-q","--quiet", default=False, action="store_true")
-    po("-I","--list-irb", default=False, action="store_true",
+    po("-Q","--quiet", default=False, action="store_true")
+    po("-I","--list-irb", default=False, action="store_true",       
        help="List image resource block content")
+    po("--presets-compare", default=False, action="store_true",
+       help="creates lossified files for all presets 0..9 for you to compare")
+    # files and names
     po("-d","--output-dir", default="",
        help="override 'psdfile/' as output location")
-    po("-p","--file-prefix", default="",
+    po("-P","--file-prefix", default="",
        help="prefix string inside in output-dir for all created files")
+    # operation modes
+    po("-L","--lossifier", default="openjpeg", type="choice",
+       choices=["openjpeg","jasper","photoshopcom"],
+       help=("Lossifier to use [%default]. Executables must be in path or "
+             "provided by the --[un]lossify-exe options"))
+    po("--lossify-exe", default="", 
+       help="Where to find the lossifying executable (default is lossifier-dependent)")
+    po("--unlossify-exe", default="", 
+       help="Where to find the unlossifying executable (default is lossifier-dependent)")
+    po("-s","--safe", default=False, action="store_true",
+       help="Safe mode, check intermediate results before destructive operation")
+    po("-p","--preset", default=5, type="int",
+       help="Lossify with preset '0' (worst) to '8' (best) or '9' (lossless) [%default]")
+    po("-b","--preset-bgchannel", default=8, type="int",
+       help="Lossify background with this preset (see -p) [%default]")
+    # do it!
     (OPTS, args) = parser.parse_args()
     #
     # some opt preprocessing
