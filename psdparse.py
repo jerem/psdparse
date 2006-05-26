@@ -142,7 +142,7 @@ def dochannel(f, li, idx, count, rows, cols, depth):
             fn_orig = make_filename("%s_%02d" % (li.fname, li.chids[idx+ch]), _ext)
             p.save(fn_orig)
             sz_orig = os.stat(fn_orig)[ST_SIZE]
-            progress("         saved (%5dk): %s" % (sz_orig/1024, fn_orig))
+            progress("       saved   (%5dk): %s" % (sz_orig/1024, fn_orig))
             del p
             if OPTS.presets_compare:
                 for preset in range(10):
@@ -374,8 +374,8 @@ if __name__ == "__main__":
     parser = OptionParser(usage = "usage: %prog [OPTS] PSDFILE.psd")
     po = parser.add_option
     # verbosity, demos, etc
-    po("-D","--demo", type="int", default=None,
-       help="Run as demo with predefined paremter set")
+    #po("-D","--demo", type="int", default=None,
+    #   help="Run as demo with predefined paramter set")
     po("-V","--very-verbose", default=False, action="store_true")
     po("-v","--verbose", default=False, action="store_true")
     po("-Q","--quiet", default=False, action="store_true")
