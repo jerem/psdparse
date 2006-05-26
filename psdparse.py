@@ -138,16 +138,17 @@ def dochannel(f, li, idx, count, rows, cols, depth):
             rlelen_for_channel = sum(rlecounts_data[ch*rows:(ch+1)*rows])
             data = f.read(rlelen_for_channel)
             p = PilImage.fromstring("L", (cols,rows), data, "packbits", "L" )
-            fn_orig = make_filename("%s_%02d" % (li.fname, li.chids[idx+ch]), "png")
+            _ext = lossifier.lossless_extension()
+            fn_orig = make_filename("%s_%02d" % (li.fname, li.chids[idx+ch]), _ext)
             p.save(fn_orig)
             sz_orig = os.stat(fn_orig)[ST_SIZE]
-            progress("       saved (%5dk): %s" % (sz_orig/1024, fn_orig))
+            progress("         saved (%5dk): %s" % (sz_orig/1024, fn_orig))
             del p
             if OPTS.presets_compare:
                 for preset in range(10):
                     fn_lossy = lossifier.lossify(fn_orig, preset, suffix="-%d"%preset)
                     sz_lossy = os.stat(fn_lossy)[ST_SIZE]
-                    progress("   lossified (%5dk): %s" % (sz_lossy/1024, fn_lossy))
+                    progress("   lossified-%s (%5dk): %s" % (_preset, sz_lossy/1024, fn_lossy))
                     if sz_lossy < 50:
                         raise "Lossified file to small: %d bytes" % sz_lossy
             else:
@@ -157,7 +158,7 @@ def dochannel(f, li, idx, count, rows, cols, depth):
                         _preset = OPTS.preset_bgchannel
                 fn_lossy = lossifier.lossify(fn_orig, _preset)
                 sz_lossy = os.stat(fn_lossy)[ST_SIZE]
-                progress("   lossified (%5dk): %s" % (sz_lossy/1024, fn_lossy))
+                progress("   lossified-%s (%5dk): %s" % (_preset, sz_lossy/1024, fn_lossy))
                 if sz_lossy < 50:
                     raise "Lossified file to small: %d bytes" % sz_lossy
                 if OPTS.safe:
@@ -165,8 +166,7 @@ def dochannel(f, li, idx, count, rows, cols, depth):
                     pass
                 
             os.remove(fn_orig)
-            progress("     removed  %5s  : %s" % ("",fn_orig))
-            raise "TEST"
+            progress("     removed    %5s  : %s" % ("",fn_orig))
     elif comp == Compressions.Raw:
         raise "Compressions.Raw nyi"
     else:
