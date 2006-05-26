@@ -2,11 +2,13 @@
 # using some python 2.5 features.
 
 # standard
-import sys, os, os.path
+import sys, os, os.path, math
 from stat import *
 from struct import unpack, calcsize
 # PIL
-import PIL.Image as PilImage
+import PIL.Image as Image
+import PIL.ImageChops as ImageChops
+import PIL.ImageStat as ImageStat
 # own
 from psddata import *
 from lossify import getLossifier
@@ -96,6 +98,22 @@ def doimageresources(f):
         warn("Image resources overran expected size by %d bytes" % (-n))
 
 
+def calc_noise(orig_image, fn_lossy, lossifier):
+    """returns noise of lossy image-file by unlossifying and comparing to orig-image''"""
+    fn_lossless = lossifier.unlossify(fn_lossy)
+    q = Image.open(fn_lossless)
+    r = ImageChops.difference(orig_image, q)
+    istat = ImageStat.Stat(r)
+    # - see: http://en.wikipedia.org/wiki/PSNR
+    # - and: http://en.wikipedia.org/wiki/Root_mean_square
+    _sqrt_mse = istat.rms[0]
+    
+    _psnr = 20.0 * math.log10(255.0 / _sqrt_mse) if _sqrt_mse!=0 else 1000*1000
+    del q
+    del r
+    return _psnr
+    
+
 def dochannel(f, li, idx, count, rows, cols, depth):
     """params:
     f -- open psd file file, read pointer on data
@@ -137,20 +155,26 @@ def dochannel(f, li, idx, count, rows, cols, depth):
             # read rle data
             rlelen_for_channel = sum(rlecounts_data[ch*rows:(ch+1)*rows])
             data = f.read(rlelen_for_channel)
-            p = PilImage.fromstring("L", (cols,rows), data, "packbits", "L" )
+            p = Image.fromstring("L", (cols,rows), data, "packbits", "L" )
+            # save p as a file suitable for lossifier
             _ext = lossifier.lossless_extension()
             fn_orig = make_filename("%s_%02d" % (li.fname, li.chids[idx+ch]), _ext)
             p.save(fn_orig)
             sz_orig = os.stat(fn_orig)[ST_SIZE]
             progress("       saved   (%5dk): %s" % (sz_orig/1024, fn_orig))
-            del p
             if OPTS.presets_compare:
                 for preset in range(10):
                     fn_lossy = lossifier.lossify(fn_orig, preset, suffix="-%d"%preset)
                     sz_lossy = os.stat(fn_lossy)[ST_SIZE]
-                    progress("   lossified-%s (%5dk): %s" % (_preset, sz_lossy/1024, fn_lossy))
                     if sz_lossy < 50:
                         raise "Lossified file to small: %d bytes" % sz_lossy
+                    _snoise = ""
+                    if OPTS.safe:
+                        _noise = calc_noise(p, fn_lossy, lossifier)
+                        if _noise < OPTS.noise_limit:
+                            raise "Noise:%5.2f lesser then limit:%5.2f" %(_noise, OPTS.noise_limit)
+                        _snoise = "%5.2f" % _noise
+                    progress("   lossified-%s (%5dk): %s %s" % (preset, sz_lossy/1024, fn_lossy, _snoise))
             else:
                 _preset = OPTS.preset
                 if li.layernum == 0: # bg layer
@@ -158,15 +182,18 @@ def dochannel(f, li, idx, count, rows, cols, depth):
                         _preset = OPTS.preset_bgchannel
                 fn_lossy = lossifier.lossify(fn_orig, _preset)
                 sz_lossy = os.stat(fn_lossy)[ST_SIZE]
-                progress("   lossified-%s (%5dk): %s" % (_preset, sz_lossy/1024, fn_lossy))
                 if sz_lossy < 50:
                     raise "Lossified file to small: %d bytes" % sz_lossy
+                _snoise = ""
                 if OPTS.safe:
-                    # TODO: verify quality of lossy file
-                    pass
-                
+                    _noise = calc_noise(p, fn_lossy, lossifier)
+                    if _noise < OPTS.noise_limit:
+                        raise "Noise:%5.2f lesser then limit:%5.2f" %(_noise, OPTS.noise_limit)
+                    _snoise = "%5.2f" % _noise
+                progress("   lossified-%s (%5dk): %s %s" % (_preset, sz_lossy/1024, fn_lossy, _snoise))
+            del p                
             os.remove(fn_orig)
-            progress("     removed    %5s  : %s" % ("",fn_orig))
+            info("     removed    %5s  : %s" % ("",fn_orig))
     elif comp == Compressions.Raw:
         raise "Compressions.Raw nyi"
     else:
@@ -397,13 +424,19 @@ if __name__ == "__main__":
        help="Where to find the lossifying executable (default is lossifier-dependent)")
     po("--unlossify-exe", default="", 
        help="Where to find the unlossifying executable (default is lossifier-dependent)")
-    po("-s","--safe", default=False, action="store_true",
-       help="Safe mode, check intermediate results before destructive operation")
     po("-p","--preset", default=5, type="int",
        help="Lossify with preset '0' (worst) to '8' (best) or '9' (lossless) [%default]")
     po("-b","--preset-bgchannel", default=8, type="int",
        help="Lossify background with this preset (see -p) [%default]")
-    # do it!
+    po("-s","--safe", default=False, action="store_true",
+       help="Safe mode, check intermediate results before destructive operation")
+    po("--noise-limit", default=20.0, type="float",
+       help=("Upper noise limit when processing is stopped in safe mode (-s). "
+             "This 'PSNR' is measured on a "
+             "log10 scale. Typical noises are inf (no), 60 (silent), 30-40 (normal), "
+             "20 (noisy). i.e. with '100' almost no noise would be allowed, and 0 would allow "
+             "any lossy result picture. [%default]"))
+       # do it!
     (OPTS, args) = parser.parse_args()
     #
     # some opt preprocessing
