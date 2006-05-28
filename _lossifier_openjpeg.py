@@ -47,9 +47,33 @@ class Lossifier_OpenJpeg(Lossifier_Base):
             'fn_in': fn_in,
             'fn_out': fn_out,
             }
-        ret = os.system(cmd)
-        if ret: # some error, probably
-            raise "Command execute error (%d): '%s'" % (ret, cmd)
+        if 1:
+            # use os.system(), dont capture streams, access to return code
+            ret = os.system(cmd)
+            if ret: # some error, probably
+                raise "Command execute error (%d): '%s'" % (ret, cmd)
+        elif 0:
+            # use os.popen(), capture stdout, access to return code
+            # -> alas, no success in capturing output
+            cmdout = os.popen(cmd, "rt")
+            output = cmdout.read()
+            if cmdout.close() is not None:
+                print output
+                raise "Command execute error (%d): '%s'" % (ret, cmd)
+        else:
+            # use os.popen4(), capture stderr+stdout, no access to return code (on windows)
+            # -> also no success in capturing output. strange. hrmph :-(
+            (cmdin, cmdout) = os.popen4(cmd)
+            output = cmdout.read()
+            try:
+                cmdin.close()
+                cmdout.close()
+            except IOError:
+                print output
+                raise "Command execute fail (%d): '%s'" % (ret, cmd)
+            if output.find('[ERROR]') >= 0:
+                print output
+                raise "Command execute error (%d): '%s'" % (ret, cmd)
         return fn_out
 
     def unlossify(self, fn_in):

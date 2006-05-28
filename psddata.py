@@ -101,5 +101,7 @@ class Modes:
 class Compressions:
     Raw = 0
     RLE = 1
+    ZIP = 2
+    ZIPPrediction = 3
     
 # eof
