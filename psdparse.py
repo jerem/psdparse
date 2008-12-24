@@ -11,7 +11,7 @@ import PIL.ImageChops as ImageChops
 import PIL.ImageStat as ImageStat
 # own
 from psddata import *
-from lossify import getLossifier
+#from lossify import getLossifier
 
 ######################################################################
 # Helpers
@@ -145,7 +145,7 @@ def dochannel(f, li, idx, count, rows, cols, depth):
         #   return
     pos = f.tell()
     if comp == Compressions.RLE:
-        lossifier = getLossifier(OPTS)
+        #lossifier = getLossifier(OPTS)
         rlecounts = 2 * count * rows
         if chlen and chlen < rlecounts:
             raise "channel too short for RLE row counts (need %d bytes, have %d bytes)" % (rlecounts,chlen)
@@ -157,43 +157,43 @@ def dochannel(f, li, idx, count, rows, cols, depth):
             data = f.read(rlelen_for_channel)
             p = Image.fromstring("L", (cols,rows), data, "packbits", "L" )
             # save p as a file suitable for lossifier
-            _ext = lossifier.lossless_extension()
-            fn_orig = make_filename("%s_%02d" % (li.fname, li.chids[idx+ch]), _ext)
+            #_ext = lossifier.lossless_extension()
+            fn_orig = make_filename("%s_%02d" % (li.fname, li.chids[idx+ch]), 'pgm')
             p.save(fn_orig)
             sz_orig = os.stat(fn_orig)[ST_SIZE]
             progress("       saved   (%5dk): %s" % (sz_orig/1024, fn_orig))
-            if OPTS.presets_compare:
-                for preset in range(10):
-                    fn_lossy = lossifier.lossify(fn_orig, preset, suffix="-%d"%preset)
-                    sz_lossy = os.stat(fn_lossy)[ST_SIZE]
-                    if sz_lossy < 50:
-                        raise "Lossified file to small: %d bytes" % sz_lossy
-                    _snoise = ""
-                    if OPTS.safe:
-                        _noise = calc_noise(p, fn_lossy, lossifier)
-                        if _noise < OPTS.noise_limit:
-                            raise "Noise:%5.2f lesser then limit:%5.2f" %(_noise, OPTS.noise_limit)
-                        _snoise = "%5.2f" % _noise
-                    progress("   lossified-%s (%5dk): %s %s" % (preset, sz_lossy/1024, fn_lossy, _snoise))
-            else:
-                _preset = OPTS.preset
-                if li.layernum == 0: # bg layer
-                    if li.chids[idx+ch] >= 0: # real channel, not mask or transparency
-                        _preset = OPTS.preset_bgchannel
-                fn_lossy = lossifier.lossify(fn_orig, _preset)
-                sz_lossy = os.stat(fn_lossy)[ST_SIZE]
-                if sz_lossy < 50:
-                    raise "Lossified file to small: %d bytes" % sz_lossy
-                _snoise = ""
-                if OPTS.safe:
-                    _noise = calc_noise(p, fn_lossy, lossifier)
-                    if _noise < OPTS.noise_limit:
-                        raise "Noise:%5.2f lesser then limit:%5.2f" %(_noise, OPTS.noise_limit)
-                    _snoise = "%5.2f" % _noise
-                progress("   lossified-%s (%5dk): %s %s" % (_preset, sz_lossy/1024, fn_lossy, _snoise))
-            del p                
-            os.remove(fn_orig)
-            info("     removed    %5s  : %s" % ("",fn_orig))
+            #if OPTS.presets_compare:
+            #    for preset in range(10):
+            #        fn_lossy = lossifier.lossify(fn_orig, preset, suffix="-%d"%preset)
+            #        sz_lossy = os.stat(fn_lossy)[ST_SIZE]
+            #        if sz_lossy < 50:
+            #            raise "Lossified file to small: %d bytes" % sz_lossy
+            #        _snoise = ""
+            #        if OPTS.safe:
+            #            _noise = calc_noise(p, fn_lossy, lossifier)
+            #            if _noise < OPTS.noise_limit:
+            #                raise "Noise:%5.2f lesser then limit:%5.2f" %(_noise, OPTS.noise_limit)
+            #            _snoise = "%5.2f" % _noise
+            #        progress("   lossified-%s (%5dk): %s %s" % (preset, sz_lossy/1024, fn_lossy, _snoise))
+            #else:
+            #    _preset = OPTS.preset
+            #    if li.layernum == 0: # bg layer
+            #        if li.chids[idx+ch] >= 0: # real channel, not mask or transparency
+            #            _preset = OPTS.preset_bgchannel
+            #    fn_lossy = lossifier.lossify(fn_orig, _preset)
+            #    sz_lossy = os.stat(fn_lossy)[ST_SIZE]
+            #    if sz_lossy < 50:
+            #        raise "Lossified file to small: %d bytes" % sz_lossy
+            #    _snoise = ""
+            #    if OPTS.safe:
+            #        _noise = calc_noise(p, fn_lossy, lossifier)
+            #        if _noise < OPTS.noise_limit:
+            #            raise "Noise:%5.2f lesser then limit:%5.2f" %(_noise, OPTS.noise_limit)
+            #        _snoise = "%5.2f" % _noise
+            #    progress("   lossified-%s (%5dk): %s %s" % (_preset, sz_lossy/1024, fn_lossy, _snoise))
+            #del p                
+            #os.remove(fn_orig)
+            #info("     removed    %5s  : %s" % ("",fn_orig))
     elif comp == Compressions.Raw:
         raise "Compressions.Raw nyi"
     else:
