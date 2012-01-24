@@ -272,7 +272,7 @@ class PSDParser():
             if chlen is not None  and  chlen < 2:
                 raise ValueError("Not enough channel data: %s" % chlen)
             if li['chids'][idx] == -2:
-                rows, cols = li['mask'].rows, li['mask'].cols
+                rows, cols = li['mask']['rows'], li['mask']['cols']
             
             rb = (cols * depth + 7) / 8 # round to next byte
             
@@ -498,7 +498,11 @@ class PSDParser():
                         a = self.images[i][3]
                         self.images[i] = Image.merge('LA', [l, a])
                     else:
-                        self.images[i] = Image.merge('RGBA', self.images[i])
+                        # is there an alpha channel?
+                        if type(self.images[i][3]) is int:
+                            self.images[i] = Image.merge('RGB', self.images[i][0:3])
+                        else:
+                            self.images[i] = Image.merge('RGBA', self.images[i])
                 
             else:
                 logging.debug(INDENT_OUTPUT(1, "Layer info section is empty"))
