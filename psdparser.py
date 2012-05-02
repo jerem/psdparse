@@ -390,7 +390,7 @@ class PSDParser():
                     #
                     # Layer Info
                     #
-                    (l['top'], l['left'], l['bottom'], l['right'], l['channels']) = self._readf(">LLLLH")
+                    (l['top'], l['left'], l['bottom'], l['right'], l['channels']) = self._readf(">llllH")
                     (l['rows'], l['cols']) = (l['bottom'] - l['top'], l['right'] - l['left'])
                     logging.debug(INDENT_OUTPUT(1, "layer %(idx)d: (%(left)4d,%(top)4d,%(right)4d,%(bottom)4d), %(channels)d channels (%(cols)4d cols x %(rows)4d rows)" % l))
                     
