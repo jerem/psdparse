@@ -457,27 +457,36 @@ class PSDParser():
                     #
                     # Layer name
                     #
+                    name_start = self.fd.tell() 
                     (l['namelen'],) = self._readf(">B")
+                    addl_layer_data_start = name_start + self._pad4(l['namelen'] + 1)
                     # - "-1": one byte traling 0byte. "-1": one byte garble.
                     # (l['name'],) = readf(f, ">%ds" % (self._pad4(1+l['namelen'])-2)) 
-                    (l['name'],) = self._readf(">%ds" % (l['namelen'])) 
-                    
-                    # Long unicode layer name
-                    def i16(c):
-                        return ord(c[1]) + (ord(c[0])<<8)
-                    
-                    def i32(c):
-                        return ord(c[3]) + (ord(c[2])<<8) + (ord(c[1])<<16) + (ord(c[0])<<24)
-                    
-                    (signature, key, size,) = self._readf(">4s4s4s") # (n,) is a 1-tuple.
-                    if key == 'luni':
-                        namelen = i32(self.fd.read(4))
-                        namelen += namelen % 2;
-                        l['name'] = ''
-                        for count in range(0, namelen - 1):
-                            l['name'] += chr(i16(self.fd.read(2)))
+                    (l['name'],) = self._readf(">%ds" % (l['namelen']))
                     
                     logging.debug(INDENT_OUTPUT(3, "Name: '%s'" % l['name']))
+
+                    self.fd.seek(addl_layer_data_start, 0)
+
+                                        
+                    #
+                    # Read add'l Layer Information
+                    #
+                    while self.fd.tell() < extrastart + extralen:
+                        (signature, key, size, ) = self._readf(">4s4sL") # (n,) is a 1-tuple.
+                        logging.debug(INDENT_OUTPUT(3, "Addl info: sig='%s' key='%s' size='%d'" %
+                                                    (signature, key, size)))
+                        next_addl_offset = self.fd.tell() + self._pad2(size)
+                        
+                        if key == 'luni':                            
+                            namelen = self._readf(">L")[0]
+                            l['name'] = ''
+                            for count in range(0, namelen):
+                                l['name'] += chr(self._readf(">H")[0])
+
+                            logging.debug(INDENT_OUTPUT(4, "Unicode Name: '%s'" % l['name']))
+
+                        self.fd.seek(next_addl_offset, 0)                        
                     
                     # Skip over any extra data
                     self.fd.seek(extrastart + extralen, 0) # 0: SEEK_SET
