@@ -349,7 +349,77 @@ class PSDParser():
         else:
             parse_channel(li, 0, li['channels'], li['rows'], li['cols'], self.header['depth']) 
         return
-    
+
+    def _read_descriptor(self):
+        # Descriptor
+        def _unicode_string():                                
+            len = self._readf(">L")[0]
+            result = ''
+            for count in range(len):
+                val = self._readf(">H")[0]
+                if val: result += chr(val)
+            return result
+
+        def _string_or_key():                                
+            len = self._readf(">L")[0]
+            if not len:
+                len = 4
+            return self._readf(">%ds" % len)[0]
+
+        def _desc_TEXT():
+            return _unicode_string()
+
+        def _desc_enum():
+            return { 'typeID' : _string_or_key(),
+                     'enum' : _string_or_key(),
+                     }
+
+        def _desc_long():
+            return self._readf(">l")[0]
+
+        def _desc_bool():
+            return self._readf(">?")[0]
+
+        def _desc_doub():
+            return self._readf(">d")[0]
+
+        def _desc_tdta():
+            # Apparently it is pdf data?
+            # http://telegraphics.com.au/svn/psdparse
+            # descriptor.c pdf.c
+
+            len = self._readf(">L")[0]
+            pdf_data = self.fd.read(len)
+            return pdf_data
+
+        _desc_item_factory = {
+            'TEXT' : _desc_TEXT,
+            'enum' : _desc_enum,
+            'long' : _desc_long,
+            'bool' : _desc_bool,
+            'doub' : _desc_doub,
+            'tdta' : _desc_tdta,
+            }
+
+        class_id_name = _unicode_string()
+        class_id = _string_or_key()
+        logging.debug(INDENT_OUTPUT(4, "name='%s' clsid='%s'" % (class_id_name, class_id)))
+
+        item_count = self._readf(">L")[0]
+        logging.debug(INDENT_OUTPUT(4, "item_count=%d" % (item_count)))
+        items = {}
+        for item_index in range(item_count):
+            item_key = _string_or_key()
+            item_type = self._readf(">4s")[0]
+            if not item_type in _desc_item_factory:
+                logging.debug(INDENT_OUTPUT(4, "unknown descriptor item '%s', skipping ahead." % item_type))
+                break
+
+            items[item_key] = _desc_item_factory[item_type]()
+            #logging.debug(INDENT_OUTPUT(4, "item['%s']='%r'" % (item_key,items[item_key])))
+            #print items[item_key]
+        return items
+
     def parse_layers_and_masks(self):
         
         if not self.header:
@@ -489,77 +559,14 @@ class PSDParser():
                             version = self._readf(">H")[0]
                             (xx, xy, yx, yy, tx, ty,) = self._readf(">dddddd") #transform
                             text_version = self._readf(">H")[0]
-                            descriptor_version = self._readf(">L")[0]
+                            text_desc_version = self._readf(">L")[0]
                             logging.debug(INDENT_OUTPUT(4, "ver=%d tver=%d dver=%d"
-                                          % (version, text_version, descriptor_version)))
-
-                            # Text Data descriptor
-                            def _unicode_string():                                
-                                len = self._readf(">L")[0]
-                                result = ''
-                                for count in range(len):
-                                    val = self._readf(">H")[0]
-                                    if val: result += chr(val)
-                                return result
-
-                            def _string_or_key():                                
-                                len = self._readf(">L")[0]
-                                if not len:
-                                    len = 4
-                                return self._readf(">%ds" % len)[0]
-                                
-                            def _desc_TEXT():
-                                return _unicode_string()
-
-                            def _desc_enum():
-                                return { 'typeID' : _string_or_key(),
-                                         'enum' : _string_or_key(),
-                                         }
-                            
-                            def _desc_long():
-                                return self._readf(">l")[0]
-
-                            def _desc_bool():
-                                return self._readf(">?")[0]
-                                                            
-                            def _desc_doub():
-                                return self._readf(">d")[0]
-
-                            def _desc_tdta():
-                                # Apparently it is pdf data?
-                                # http://telegraphics.com.au/svn/psdparse
-                                # descriptor.c pdf.c
-
-                                len = self._readf(">L")[0]
-                                pdf_data = self.fd.read(len)
-                                return pdf_data
-                                                            
-                            _desc_item_factory = {
-                                'TEXT' : _desc_TEXT,
-                                'enum' : _desc_enum,
-                                'long' : _desc_long,
-                                'bool' : _desc_bool,
-                                'doub' : _desc_doub,
-                                'tdta' : _desc_tdta,
-                                }
-                                
-                            class_id_name = _unicode_string()
-                            class_id = _string_or_key()
-                            logging.debug(INDENT_OUTPUT(4, "name='%s' clsid='%s'" % (class_id_name, class_id)))
-                            
-                            item_count = self._readf(">L")[0]
-                            logging.debug(INDENT_OUTPUT(4, "item_count=%d" % (item_count)))
-                            items = {}
-                            for item_index in range(item_count):
-                                item_key = _string_or_key()
-                                item_type = self._readf(">4s")[0]
-                                if not item_type in _desc_item_factory:
-                                    logging.debug(INDENT_OUTPUT(4, "unknown descriptor item '%s', skipping ahead." % item_type))
-                                    break
-                                
-                                items[item_key] = _desc_item_factory[item_type]()
-                                logging.debug(INDENT_OUTPUT(4, "item['%s']='%r'" % (item_key,items[item_key])))
-
+                                          % (version, text_version, text_desc_version)))
+                            text_desc = self._read_descriptor()
+                            warp_version = self._readf(">H")[0]
+                            warp_desc_version = self._readf(">L")[0]
+                            warp_desc = self._read_descriptor()
+                            (left,top,right,bottom,) = self._readf(">4d")
                                                     
                         self.fd.seek(next_addl_offset, 0)                        
                     
