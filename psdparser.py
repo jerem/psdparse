@@ -371,7 +371,7 @@ class PSDParser():
             (layerlen,) = self._readf(">L")
             if layerlen:
                 # layers structure
-                (self.num_layers,) = self._readf(">H")
+                (self.num_layers,) = self._readf(">h")
                 if self.num_layers < 0:
                     self.num_layers = -self.num_layers
                     logging.debug(INDENT_OUTPUT(1, "First alpha is transparency for merged image"))
@@ -537,6 +537,8 @@ class PSDParser():
             self.merged_image = self.merged_image[0]
         elif li['channels'] == 3:
             self.merged_image = Image.merge('RGB', self.merged_image)
+        elif li['channels'] == 4 and self.header['mode'] == 3:
+            self.merged_image = Image.merge('RGBA', self.merged_image)
         else:
             raise ValueError('Unsupported number of channels')
 
