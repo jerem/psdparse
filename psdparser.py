@@ -406,7 +406,7 @@ class PSDParser():
         logging.debug(INDENT_OUTPUT(4, "name='%s' clsid='%s'" % (class_id_name, class_id)))
 
         item_count = self._readf(">L")[0]
-        logging.debug(INDENT_OUTPUT(4, "item_count=%d" % (item_count)))
+        #logging.debug(INDENT_OUTPUT(4, "item_count=%d" % (item_count)))
         items = {}
         for item_index in range(item_count):
             item_key = _string_or_key()
@@ -560,13 +560,24 @@ class PSDParser():
                             (xx, xy, yx, yy, tx, ty,) = self._readf(">dddddd") #transform
                             text_version = self._readf(">H")[0]
                             text_desc_version = self._readf(">L")[0]
-                            logging.debug(INDENT_OUTPUT(4, "ver=%d tver=%d dver=%d"
-                                          % (version, text_version, text_desc_version)))
                             text_desc = self._read_descriptor()
                             warp_version = self._readf(">H")[0]
                             warp_desc_version = self._readf(">L")[0]
                             warp_desc = self._read_descriptor()
-                            (left,top,right,bottom,) = self._readf(">4d")
+                            (left,top,right,bottom,) = self._readf(">4l")
+
+                            logging.debug(INDENT_OUTPUT(4, "ver=%d tver=%d dver=%d"
+                                          % (version, text_version, text_desc_version)))
+                            logging.debug(INDENT_OUTPUT(4, "%f %f %f %f %f %f" % (xx, xy, yx, yy, tx, ty,)))
+                            logging.debug(INDENT_OUTPUT(4, "l=%f t=%f r=%f b=%f"
+                                          % (left, top, right, bottom)))
+
+                            l['text_layer'] = {}
+                            l['text_layer']['text_desc'] = text_desc
+                            l['text_layer']['left'] = left
+                            l['text_layer']['top'] = top
+                            l['text_layer']['right'] = right
+                            l['text_layer']['bottom'] = bottom
                                                     
                         self.fd.seek(next_addl_offset, 0)                        
                     
