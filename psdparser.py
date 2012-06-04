@@ -564,7 +564,7 @@ class PSDParser():
                             warp_version = self._readf(">H")[0]
                             warp_desc_version = self._readf(">L")[0]
                             warp_desc = self._read_descriptor()
-                            (left,top,right,bottom,) = self._readf(">4l")
+                            (left,top,right,bottom,) = self._readf(">llll")
 
                             logging.debug(INDENT_OUTPUT(4, "ver=%d tver=%d dver=%d"
                                           % (version, text_version, text_desc_version)))
@@ -574,6 +574,7 @@ class PSDParser():
 
                             l['text_layer'] = {}
                             l['text_layer']['text_desc'] = text_desc
+                            l['text_layer']['text_transform'] = (xx, xy, yx, yy, tx, ty,)
                             l['text_layer']['left'] = left
                             l['text_layer']['top'] = top
                             l['text_layer']['right'] = right
