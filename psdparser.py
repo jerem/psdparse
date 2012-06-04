@@ -349,7 +349,77 @@ class PSDParser():
         else:
             parse_channel(li, 0, li['channels'], li['rows'], li['cols'], self.header['depth']) 
         return
-    
+
+    def _read_descriptor(self):
+        # Descriptor
+        def _unicode_string():                                
+            len = self._readf(">L")[0]
+            result = ''
+            for count in range(len):
+                val = self._readf(">H")[0]
+                if val: result += chr(val)
+            return result
+
+        def _string_or_key():                                
+            len = self._readf(">L")[0]
+            if not len:
+                len = 4
+            return self._readf(">%ds" % len)[0]
+
+        def _desc_TEXT():
+            return _unicode_string()
+
+        def _desc_enum():
+            return { 'typeID' : _string_or_key(),
+                     'enum' : _string_or_key(),
+                     }
+
+        def _desc_long():
+            return self._readf(">l")[0]
+
+        def _desc_bool():
+            return self._readf(">?")[0]
+
+        def _desc_doub():
+            return self._readf(">d")[0]
+
+        def _desc_tdta():
+            # Apparently it is pdf data?
+            # http://telegraphics.com.au/svn/psdparse
+            # descriptor.c pdf.c
+
+            len = self._readf(">L")[0]
+            pdf_data = self.fd.read(len)
+            return pdf_data
+
+        _desc_item_factory = {
+            'TEXT' : _desc_TEXT,
+            'enum' : _desc_enum,
+            'long' : _desc_long,
+            'bool' : _desc_bool,
+            'doub' : _desc_doub,
+            'tdta' : _desc_tdta,
+            }
+
+        class_id_name = _unicode_string()
+        class_id = _string_or_key()
+        logging.debug(INDENT_OUTPUT(4, "name='%s' clsid='%s'" % (class_id_name, class_id)))
+
+        item_count = self._readf(">L")[0]
+        #logging.debug(INDENT_OUTPUT(4, "item_count=%d" % (item_count)))
+        items = {}
+        for item_index in range(item_count):
+            item_key = _string_or_key()
+            item_type = self._readf(">4s")[0]
+            if not item_type in _desc_item_factory:
+                logging.debug(INDENT_OUTPUT(4, "unknown descriptor item '%s', skipping ahead." % item_type))
+                break
+
+            items[item_key] = _desc_item_factory[item_type]()
+            #logging.debug(INDENT_OUTPUT(4, "item['%s']='%r'" % (item_key,items[item_key])))
+            #print items[item_key]
+        return items
+
     def parse_layers_and_masks(self):
         
         if not self.header:
@@ -457,27 +527,60 @@ class PSDParser():
                     #
                     # Layer name
                     #
+                    name_start = self.fd.tell() 
                     (l['namelen'],) = self._readf(">B")
+                    addl_layer_data_start = name_start + self._pad4(l['namelen'] + 1)
                     # - "-1": one byte traling 0byte. "-1": one byte garble.
                     # (l['name'],) = readf(f, ">%ds" % (self._pad4(1+l['namelen'])-2)) 
-                    (l['name'],) = self._readf(">%ds" % (l['namelen'])) 
-                    
-                    # Long unicode layer name
-                    def i16(c):
-                        return ord(c[1]) + (ord(c[0])<<8)
-                    
-                    def i32(c):
-                        return ord(c[3]) + (ord(c[2])<<8) + (ord(c[1])<<16) + (ord(c[0])<<24)
-                    
-                    (signature, key, size,) = self._readf(">4s4s4s") # (n,) is a 1-tuple.
-                    if key == 'luni':
-                        namelen = i32(self.fd.read(4))
-                        namelen += namelen % 2;
-                        l['name'] = ''
-                        for count in range(0, namelen - 1):
-                            l['name'] += chr(i16(self.fd.read(2)))
+                    (l['name'],) = self._readf(">%ds" % (l['namelen']))
                     
                     logging.debug(INDENT_OUTPUT(3, "Name: '%s'" % l['name']))
+
+                    self.fd.seek(addl_layer_data_start, 0)
+
+                                        
+                    #
+                    # Read add'l Layer Information
+                    #
+                    while self.fd.tell() < extrastart + extralen:
+                        (signature, key, size, ) = self._readf(">4s4sL") # (n,) is a 1-tuple.
+                        logging.debug(INDENT_OUTPUT(3, "Addl info: sig='%s' key='%s' size='%d'" %
+                                                    (signature, key, size)))
+                        next_addl_offset = self.fd.tell() + self._pad2(size)
+                        
+                        if key == 'luni':                            
+                            namelen = self._readf(">L")[0]
+                            l['name'] = ''
+                            for count in range(0, namelen):
+                                l['name'] += chr(self._readf(">H")[0])
+
+                            logging.debug(INDENT_OUTPUT(4, "Unicode Name: '%s'" % l['name']))
+                        elif key == 'TySh':
+                            version = self._readf(">H")[0]
+                            (xx, xy, yx, yy, tx, ty,) = self._readf(">dddddd") #transform
+                            text_version = self._readf(">H")[0]
+                            text_desc_version = self._readf(">L")[0]
+                            text_desc = self._read_descriptor()
+                            warp_version = self._readf(">H")[0]
+                            warp_desc_version = self._readf(">L")[0]
+                            warp_desc = self._read_descriptor()
+                            (left,top,right,bottom,) = self._readf(">llll")
+
+                            logging.debug(INDENT_OUTPUT(4, "ver=%d tver=%d dver=%d"
+                                          % (version, text_version, text_desc_version)))
+                            logging.debug(INDENT_OUTPUT(4, "%f %f %f %f %f %f" % (xx, xy, yx, yy, tx, ty,)))
+                            logging.debug(INDENT_OUTPUT(4, "l=%f t=%f r=%f b=%f"
+                                          % (left, top, right, bottom)))
+
+                            l['text_layer'] = {}
+                            l['text_layer']['text_desc'] = text_desc
+                            l['text_layer']['text_transform'] = (xx, xy, yx, yy, tx, ty,)
+                            l['text_layer']['left'] = left
+                            l['text_layer']['top'] = top
+                            l['text_layer']['right'] = right
+                            l['text_layer']['bottom'] = bottom
+                                                    
+                        self.fd.seek(next_addl_offset, 0)                        
                     
                     # Skip over any extra data
                     self.fd.seek(extrastart + extralen, 0) # 0: SEEK_SET
