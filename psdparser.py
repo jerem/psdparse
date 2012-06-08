@@ -304,7 +304,8 @@ class PSDParser():
                     if li['channels'] == 2 and channel_name == 'B': channel_name = 'L'
                     p = Image.fromstring("L", (cols, rows), data, "packbits", "L" )
                     if is_layer:
-                        self.images[li['idx']][PIL_BANDS[channel_name]] = p
+                        if channel_name in PIL_BANDS:
+                            self.images[li['idx']][PIL_BANDS[channel_name]] = p
                     else:
                         self.merged_image.append(p)
             
@@ -316,7 +317,8 @@ class PSDParser():
                     channel_name = CHANNEL_SUFFIXES[li['chids'][idx]]
                     if li['channels'] == 2 and channel_name == 'B': channel_name = 'L'
                     p = Image.fromstring("L", (cols, rows), data, "raw", "L")
-                    if is_layer:
+                    if is_layer:                        
+                        if channel_name in PIL_BANDS:
                         self.images[li['idx']][PIL_BANDS[channel_name]] = p
                     else:
                         self.merged_image.append(p)
@@ -516,7 +518,7 @@ class PSDParser():
                     (m['size'],) = self._readf(">L")
                     if m['size']:
                         (m['top'], m['left'], m['bottom'], m['right'], m['default_color'], m['flags'],
-                         ) = self._readf(">LLLLBB")
+                         ) = self._readf(">llllBB")
                         # skip remainder
                         self.fd.seek(m['size'] - 18, 1) # 1: SEEK_CUR
                         m['rows'], m['cols'] = m['bottom'] - m['top'], m['right'] - m['left']
@@ -640,10 +642,10 @@ class PSDParser():
             self.merged_image = self.merged_image[0]
         elif li['channels'] == 3:
             self.merged_image = Image.merge('RGB', self.merged_image)
-        elif li['channels'] == 4 and self.header['mode'] == 3:
-            self.merged_image = Image.merge('RGBA', self.merged_image)
+        elif li['channels'] >= 4 and self.header['mode'] == 3:
+            self.merged_image = Image.merge('RGBA', self.merged_image[:4])
         else:
-            raise ValueError('Unsupported number of channels')
+            raise ValueError('Unsupported mode or number of channels')
 
 if __name__ == '__main__':
     """
