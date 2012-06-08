@@ -319,7 +319,7 @@ class PSDParser():
                     p = Image.fromstring("L", (cols, rows), data, "raw", "L")
                     if is_layer:                        
                         if channel_name in PIL_BANDS:
-                        self.images[li['idx']][PIL_BANDS[channel_name]] = p
+                            self.images[li['idx']][PIL_BANDS[channel_name]] = p
                     else:
                         self.merged_image.append(p)
             
