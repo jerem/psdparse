@@ -30,7 +30,7 @@ CHANNEL_SUFFIXES = {
     1: 'G',
     2: 'B',
     3: 'RGB',
-    4: 'CMYK', 5: 'HSL', 6: 'HSB', 
+    4: 'CMYK', 5: 'HSL', 6: 'HSB',
     9: 'Lab', 11: 'RGB',
     12: 'Lab', 13: 'CMYK',
 }
@@ -144,17 +144,17 @@ def INDENT_OUTPUT(depth, msg):
     return ''.join(['    ' for i in range(0, depth)]) + msg
 
 class PSDParser():
-    
+
     header = None
     ressources = None
     num_layers = 0
     layers = None
     images = None
     merged_image = None
-    
+
     def __init__(self, filename):
         self.filename = filename
-    
+
     def _pad2(self, i):
         """same or next even"""
         return (i + 1) / 2 * 2
@@ -162,7 +162,7 @@ class PSDParser():
     def _pad4(self, i):
         """same or next multiple of 4"""
         return (i + 3) / 4 * 4
-    
+
     def _readf(self, format):
         """read a strct from file structure according to format"""
         return unpack(format, self.fd.read(calcsize(format)))
@@ -175,10 +175,10 @@ class PSDParser():
         if new_line:
             logging.debug('')
         logging.debug(INDENT_OUTPUT(indent, 'Skipped %s with %s bytes' % (desc, n)))
-    
+
     def parse(self):
         logging.debug("Opening '%s'" % self.filename)
-        
+
         self.fd = open(self.filename, 'rb')
         try:
             self.parse_header()
@@ -187,16 +187,16 @@ class PSDParser():
             self.parse_image_data()
         finally:
             self.fd.close()
-        
+
         logging.debug("")
         logging.debug("DONE")
-    
+
     def parse_header(self):
         logging.debug("")
         logging.debug("# Header #")
-        
+
         self.header = {}
-        
+
         C_PSD_HEADER = ">4sH 6B HLLHH"
         (
             self.header['sig'],
@@ -213,22 +213,22 @@ class PSDParser():
             self.header['depth'],
             self.header['mode']
         ) = self._readf(C_PSD_HEADER)
-        
+
         self.size = [self.header['rows'], self.header['cols']]
-        
+
         if self.header['sig'] != "8BPS":
             raise ValueError("Not a PSD signature: '%s'" % self.header['sig'])
         if self.header['version'] != 1:
             raise ValueError("Can not handle PSD version:%d" % self.header['version'])
         self.header['modename'] = MODES[self.header['mode']] if 0 <= self.header['mode'] < 16 else "(%s)" % self.header['mode']
-        
+
         logging.debug(INDENT_OUTPUT(1, "channels:%(channels)d, rows:%(rows)d, cols:%(cols)d, depth:%(depth)d, mode:%(mode)d [%(modename)s]" % self.header))
         logging.debug(INDENT_OUTPUT(1, "%s" % self.header))
-        
+
         # Remember position
         self.header['colormodepos'] = self.fd.tell()
         self._skip_block("color mode data", 1)
-    
+
     def parse_image_resources(self):
         def parse_irb():
             """return total bytes in block"""
@@ -246,7 +246,7 @@ class PSDParser():
             logging.debug(INDENT_OUTPUT(1, "0x%(at)06x| type:%(type)s, id:%(id)5d, size:0x%(size)04x %(rdesc)s '%(short)s'" % r))
             self.ressources.append(r)
             return 4 + 2 + self._pad2(1 + r['namelen']) + 4 + self._pad2(r['size'])
-        
+
         logging.debug("")
         logging.debug("# Ressources #")
         self.ressources = []
@@ -255,7 +255,7 @@ class PSDParser():
             n -= parse_irb()
         if n != 0:
             logging.debug("Image resources overran expected size by %d bytes" % (-n))
-    
+
     def parse_image(self, li, is_layer=True):
         def parse_channel(li, idx, count, rows, cols, depth):
             """params:
@@ -270,23 +270,23 @@ class PSDParser():
                 raise ValueError("Not enough channel data: %s" % chlen)
             if li['chids'][idx] == -2:
                 rows, cols = li['mask']['rows'], li['mask']['cols']
-            
+
             rb = (cols * depth + 7) / 8 # round to next byte
-            
+
             # channel header
             chpos = self.fd.tell()
             (comp,) = self._readf(">H")
-            
+
             if chlen:
                 chlen -= 2
-            
+
             pos = self.fd.tell()
-            
+
             # If empty layer
             if cols * rows == 0:
                 logging.debug(INDENT_OUTPUT(1, "Empty channel, skiping"))
                 return
-            
+
             if COMPRESSIONS.get(comp) == 'RLE':
                 logging.debug(INDENT_OUTPUT(1, "Handling RLE compressed data"))
                 rlecounts = 2 * count * rows
@@ -305,53 +305,53 @@ class PSDParser():
                             self.images[li['idx']][PIL_BANDS[channel_name]] = p
                     else:
                         self.merged_image.append(p)
-            
+
             elif COMPRESSIONS.get(comp) == 'Raw':
                 logging.debug(INDENT_OUTPUT(1, "Handling Raw compressed data"))
-                
+
                 for ch in range(count):
                     data = self.fd.read(cols * rows)
                     channel_name = CHANNEL_SUFFIXES[li['chids'][idx]]
                     if li['channels'] == 2 and channel_name == 'B': channel_name = 'L'
                     p = Image.fromstring("L", (cols, rows), data, "raw", "L")
-                    if is_layer:                        
+                    if is_layer:
                         if channel_name in PIL_BANDS:
                             self.images[li['idx']][PIL_BANDS[channel_name]] = p
                     else:
                         self.merged_image.append(p)
-            
+
             else:
                 # TODO: maybe just skip channel...:
                 #   f.seek(chlen, SEEK_CUR)
                 #   return
                 raise ValueError("Unsupported compression type: %s" % COMPRESSIONS.get(comp, comp))
-            
+
             if (chlen is not None) and (self.fd.tell() != chpos + 2 + chlen):
                 logging.debug("currentpos:%d should be:%d!" % (f.tell(), chpos + 2 + chlen))
                 self.fd.seek(chpos + 2 + chlen, 0) # 0: SEEK_SET
-            
+
             return
-        
+
         if not self.header:
             self.parse_header()
         if not self.ressources:
             self._skip_block("image resources", new_line=True)
             self.ressources = 'not parsed'
-        
+
         logging.debug("")
         logging.debug("# Image: %s/%d #" % (li['name'], li['channels']))
-        
+
         # channels
         if is_layer:
             for ch in range(li['channels']):
                 parse_channel(li, ch, 1, li['rows'], li['cols'], self.header['depth'])
         else:
-            parse_channel(li, 0, li['channels'], li['rows'], li['cols'], self.header['depth']) 
+            parse_channel(li, 0, li['channels'], li['rows'], li['cols'], self.header['depth'])
         return
 
     def _read_descriptor(self):
         # Descriptor
-        def _unicode_string():                                
+        def _unicode_string():
             len = self._readf(">L")[0]
             result = ''
             for count in range(len):
@@ -359,7 +359,7 @@ class PSDParser():
                 if val: result += chr(val)
             return result
 
-        def _string_or_key():                                
+        def _string_or_key():
             len = self._readf(">L")[0]
             if not len:
                 len = 4
@@ -420,16 +420,16 @@ class PSDParser():
         return items
 
     def parse_layers_and_masks(self):
-        
+
         if not self.header:
             self.parse_header()
         if not self.ressources:
             self._skip_block('image resources', new_line=True)
             self.ressources = 'not parsed'
-        
+
         logging.debug("")
         logging.debug("# Layers & Masks #")
-        
+
         self.layers = []
         self.images = []
         self.header['mergedalpha'] = False
@@ -446,30 +446,30 @@ class PSDParser():
                     logging.debug(INDENT_OUTPUT(1, "First alpha is transparency for merged image"))
                     self.header['mergedalpha'] = True
                 logging.debug(INDENT_OUTPUT(1, "Layer info for %d layers:" % self.num_layers))
-                
+
                 if self.num_layers * (18 + 6 * self.header['channels']) > layerlen:
                     raise ValueError("Unlikely number of %s layers for %s channels with %s layerlen. Giving up." % (self.num_layers, self.header['channels'], layerlen))
-                
+
                 linfo = [] # collect header infos here
-                
+
                 for i in range(self.num_layers):
                     l = {}
                     l['idx'] = i
-                    
+
                     #
                     # Layer Info
                     #
                     (l['top'], l['left'], l['bottom'], l['right'], l['channels']) = self._readf(">llllH")
                     (l['rows'], l['cols']) = (l['bottom'] - l['top'], l['right'] - l['left'])
                     logging.debug(INDENT_OUTPUT(1, "layer %(idx)d: (%(left)4d,%(top)4d,%(right)4d,%(bottom)4d), %(channels)d channels (%(cols)4d cols x %(rows)4d rows)" % l))
-                    
+
                     # Sanity check
                     if l['bottom'] < l['top'] or l['right'] < l['left'] or l['channels'] > 64:
                         logging.debug(INDENT_OUTPUT(2, "Something's not right about that, trying to skip layer."))
                         self.fd.seek(6 * l['channels'] + 12, 1) # 1: SEEK_CUR
                         self._skip_block("layer info: extra data", 2)
                         continue # next layer
-                    
+
                     # Read channel infos
                     l['chlengths'] = []
                     l['chids']  = []
@@ -486,28 +486,28 @@ class PSDParser():
                         else:
                             logging.debug(INDENT_OUTPUT(3, "Unexpected channel id %d" % chid))
                         l['chidstr'] = CHANNEL_SUFFIXES.get(chid, "?")
-                    
+
                     # put channel info into connection
-                    linfo.append(l) 
-                    
+                    linfo.append(l)
+
                     #
                     # Blend mode
                     #
                     bm = {}
-                    
+
                     (bm['sig'], bm['key'], bm['opacity'], bm['clipping'], bm['flags'], bm['filler'],
                      ) = self._readf(">4s4sBBBB")
                     bm['opacp'] = (bm['opacity'] * 100 + 127) / 255
                     bm['clipname'] = bm['clipping'] and "non-base" or "base"
                     bm['blending'] = BLENDINGS.get(bm['key'])
                     l['blend_mode'] = bm
-                    
+
                     logging.debug(INDENT_OUTPUT(3, "Blending mode: sig=%(sig)s key=%(key)s opacity=%(opacity)d(%(opacp)d%%) clipping=%(clipping)d(%(clipname)s) flags=%(flags)x" % bm))
-                    
+
                     # remember position for skipping unrecognized data
                     (extralen,) = self._readf(">L")
                     extrastart = self.fd.tell()
-                    
+
                     #
                     # Layer mask data
                     #
@@ -520,24 +520,24 @@ class PSDParser():
                         self.fd.seek(m['size'] - 18, 1) # 1: SEEK_CUR
                         m['rows'], m['cols'] = m['bottom'] - m['top'], m['right'] - m['left']
                     l['mask'] = m
-                    
+
                     self._skip_block("layer blending ranges", 3)
-                    
+
                     #
                     # Layer name
                     #
-                    name_start = self.fd.tell() 
+                    name_start = self.fd.tell()
                     (l['namelen'],) = self._readf(">B")
                     addl_layer_data_start = name_start + self._pad4(l['namelen'] + 1)
                     # - "-1": one byte traling 0byte. "-1": one byte garble.
-                    # (l['name'],) = readf(f, ">%ds" % (self._pad4(1+l['namelen'])-2)) 
+                    # (l['name'],) = readf(f, ">%ds" % (self._pad4(1+l['namelen'])-2))
                     (l['name'],) = self._readf(">%ds" % (l['namelen']))
-                    
+
                     logging.debug(INDENT_OUTPUT(3, "Name: '%s'" % l['name']))
 
                     self.fd.seek(addl_layer_data_start, 0)
 
-                                        
+
                     #
                     # Read add'l Layer Information
                     #
@@ -546,8 +546,8 @@ class PSDParser():
                         logging.debug(INDENT_OUTPUT(3, "Addl info: sig='%s' key='%s' size='%d'" %
                                                     (signature, key, size)))
                         next_addl_offset = self.fd.tell() + self._pad2(size)
-                        
-                        if key == 'luni':                            
+
+                        if key == 'luni':
                             namelen = self._readf(">L")[0]
                             l['name'] = ''
                             for count in range(0, namelen):
@@ -578,21 +578,21 @@ class PSDParser():
                             l['text_layer']['top'] = top
                             l['text_layer']['right'] = right
                             l['text_layer']['bottom'] = bottom
-                                                    
-                        self.fd.seek(next_addl_offset, 0)                        
-                    
+
+                        self.fd.seek(next_addl_offset, 0)
+
                     # Skip over any extra data
                     self.fd.seek(extrastart + extralen, 0) # 0: SEEK_SET
-                    
+
                     self.layers.append(l)
-                
+
                 for i in range(self.num_layers):
                     # Empty layer
                     if linfo[i]['rows'] * linfo[i]['cols'] == 0:
                         self.images.append(None)
                         self.parse_image(linfo[i], is_layer=True)
                         continue
-                    
+
                     self.images.append([0, 0, 0, 0])
                     self.parse_image(linfo[i], is_layer=True)
                     if linfo[i]['channels'] == 2:
@@ -605,10 +605,10 @@ class PSDParser():
                             self.images[i] = Image.merge('RGB', self.images[i][0:3])
                         else:
                             self.images[i] = Image.merge('RGBA', self.images[i])
-                
+
             else:
                 logging.debug(INDENT_OUTPUT(1, "Layer info section is empty"))
-            
+
             skip = miscstart + misclen - self.fd.tell()
             if skip:
                 logging.debug("")
@@ -616,9 +616,9 @@ class PSDParser():
                 self.fd.seek(skip, 1) # 1: SEEK_CUR
         else:
             logging.debug(INDENT_OUTPUT(1, "Misc info section is empty"))
-    
+
     def parse_image_data(self):
-        
+
         if not self.header:
             self.parse_header()
         if not self.ressources:
@@ -627,7 +627,7 @@ class PSDParser():
         if not self.layers:
             self._skip_block("image layers", new_line=True)
             self.layers = 'not parsed'
-        
+
         self.merged_image = []
         li = {}
         li['chids'] = range(self.header['channels'])
@@ -648,38 +648,38 @@ if __name__ == '__main__':
     """
     Let's get started!
     """
-    
+
     from optparse import OptionParser
     parser = OptionParser(usage = "usage: %prog [OPTS] PSDFILE.psd")
     po = parser.add_option
-    
+
     # Verbosity
     po('-v', '--verbose', default=False, action='store_true')
     po('-q', '--quiet', default=False, action='store_true')
-    
+
     (OPTS, args) = parser.parse_args()
-    
+
     # The global holder for all the information we really care about
     info = {}
-    
+
     # Set the logger
     level = logging.INFO
     if OPTS.verbose:
         level = logging.DEBUG
     if OPTS.quiet:
         level = logging.WARNING
-    
+
     logging.basicConfig(level=level, format='[DEBUG] %(message)s')
-    
+
     # Run
     if len(args) == 1:
         psd = PSDParser(args[0])
         psd.parse()
-        
+
         import yaml
         print "# YAML automatically generated by psdparser\n"
         print yaml.dump({'header': psd.header, 'ressources': psd.ressources, 'layers': psd.layers}, indent=2)
-        
+
     else:
         parser.print_help()
         sys.exit(1)
