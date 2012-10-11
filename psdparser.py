@@ -355,10 +355,11 @@ class PSDParser():
         # Descriptor
         def _unicode_string():
             len = self._readf(">L")[0]
-            result = ''
+            result = u''
             for count in range(len):
                 val = self._readf(">H")[0]
-                if val: result += chr(val)
+                if val:
+                    result += unichr(val)
             return result
 
         def _string_or_key():
@@ -404,7 +405,7 @@ class PSDParser():
 
         class_id_name = _unicode_string()
         class_id = _string_or_key()
-        logger.debug(INDENT_OUTPUT(4, "name='%s' clsid='%s'" % (class_id_name, class_id)))
+        logger.debug(INDENT_OUTPUT(4, u"name='%s' clsid='%s'" % (class_id_name, class_id)))
 
         item_count = self._readf(">L")[0]
         #logger.debug(INDENT_OUTPUT(4, "item_count=%d" % (item_count)))
@@ -551,11 +552,11 @@ class PSDParser():
 
                         if key == 'luni':
                             namelen = self._readf(">L")[0]
-                            l['name'] = ''
+                            l['name'] = u''
                             for count in range(0, namelen):
-                                l['name'] += chr(self._readf(">H")[0])
+                                l['name'] += unichr(self._readf(">H")[0])
 
-                            logger.debug(INDENT_OUTPUT(4, "Unicode Name: '%s'" % l['name']))
+                            logger.debug(INDENT_OUTPUT(4, u"Unicode Name: '%s'" % l['name']))
                         elif key == 'TySh':
                             version = self._readf(">H")[0]
                             (xx, xy, yx, yy, tx, ty,) = self._readf(">dddddd") #transform
